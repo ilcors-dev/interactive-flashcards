@@ -1,5 +1,5 @@
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -15,6 +15,7 @@ use ratatui::{
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 struct Flashcard {
@@ -36,6 +37,7 @@ struct QuizSession {
 enum AppState {
     Menu,
     Quiz,
+    QuizQuitConfirm,
     Summary,
 }
 
@@ -59,6 +61,9 @@ fn main() -> io::Result<()> {
                     draw_quiz(f, session);
                 }
             }
+            AppState::QuizQuitConfirm => {
+                draw_quit_confirmation(f);
+            }
             AppState::Summary => {
                 if let Some(session) = &quiz_session {
                     draw_summary(f, session);
@@ -66,70 +71,85 @@ fn main() -> io::Result<()> {
             }
         })?;
 
-        if let Event::Key(key) = event::read()? {
-            match app_state {
-                AppState::Menu => match key.code {
-                    KeyCode::Up => {
-                        if selected_file_index > 0 {
-                            selected_file_index -= 1;
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    break;
+                }
+                match app_state {
+                    AppState::Menu => match key.code {
+                        KeyCode::Up => {
+                            if selected_file_index > 0 {
+                                selected_file_index -= 1;
+                            }
+                        }
+                        KeyCode::Down => {
+                            if selected_file_index < csv_files.len().saturating_sub(1) {
+                                selected_file_index += 1;
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if !csv_files.is_empty() {
+                                if let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
+                                    let deck_name = csv_files[selected_file_index]
+                                        .file_stem()
+                                        .unwrap()
+                                        .to_string_lossy()
+                                        .to_string();
+                                    let mut cards = flashcards;
+                                    cards.shuffle(&mut rand::thread_rng());
+                                    quiz_session = Some(QuizSession {
+                                        flashcards: cards,
+                                        current_index: 0,
+                                        deck_name,
+                                        showing_answer: false,
+                                        input_buffer: String::new(),
+                                    });
+                                    app_state = AppState::Quiz;
+                                }
+                            }
+                        }
+                        KeyCode::Esc => break,
+                        _ => {}
+                    },
+                    AppState::Quiz => {
+                        if let Some(session) = &mut quiz_session {
+                            handle_quiz_input(session, key.code, &mut app_state);
                         }
                     }
-                    KeyCode::Down => {
-                        if selected_file_index < csv_files.len().saturating_sub(1) {
-                            selected_file_index += 1;
+                    AppState::QuizQuitConfirm => match key.code {
+                        KeyCode::Char('y') => {
+                            app_state = AppState::Menu;
+                            quiz_session = None;
                         }
-                    }
-                    KeyCode::Enter => {
-                        if !csv_files.is_empty() {
-                            if let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
-                                let deck_name = csv_files[selected_file_index]
-                                    .file_stem()
-                                    .unwrap()
-                                    .to_string_lossy()
-                                    .to_string();
-                                let mut cards = flashcards;
+                        KeyCode::Char('n') => {
+                            app_state = AppState::Quiz;
+                        }
+                        _ => {}
+                    },
+                    AppState::Summary => match key.code {
+                        KeyCode::Char('r') => {
+                            if let Some(session) = &mut quiz_session {
+                                let mut cards = session.flashcards.clone();
+                                for card in &mut cards {
+                                    card.user_answer = None;
+                                }
                                 cards.shuffle(&mut rand::thread_rng());
-                                quiz_session = Some(QuizSession {
-                                    flashcards: cards,
-                                    current_index: 0,
-                                    deck_name,
-                                    showing_answer: false,
-                                    input_buffer: String::new(),
-                                });
+                                session.flashcards = cards;
+                                session.current_index = 0;
+                                session.showing_answer = false;
+                                session.input_buffer = String::new();
                                 app_state = AppState::Quiz;
                             }
                         }
-                    }
-                    KeyCode::Char('q') => break,
-                    _ => {}
-                },
-                AppState::Quiz => {
-                    if let Some(session) = &mut quiz_session {
-                        handle_quiz_input(session, key.code, &mut app_state);
-                    }
-                }
-                AppState::Summary => match key.code {
-                    KeyCode::Char('r') => {
-                        if let Some(session) = &mut quiz_session {
-                            let mut cards = session.flashcards.clone();
-                            for card in &mut cards {
-                                card.user_answer = None;
-                            }
-                            cards.shuffle(&mut rand::thread_rng());
-                            session.flashcards = cards;
-                            session.current_index = 0;
-                            session.showing_answer = false;
-                            session.input_buffer = String::new();
-                            app_state = AppState::Quiz;
+                        KeyCode::Char('m') => {
+                            app_state = AppState::Menu;
+                            quiz_session = None;
                         }
-                    }
-                    KeyCode::Char('m') => {
-                        app_state = AppState::Menu;
-                        quiz_session = None;
-                    }
-                    KeyCode::Char('q') => break,
-                    _ => {}
-                },
+                        KeyCode::Esc => break,
+                        _ => {}
+                    },
+                }
             }
         }
     }
@@ -287,12 +307,19 @@ fn draw_menu(f: &mut ratatui::Frame, csv_files: &[PathBuf], selected_index: usiz
         ),
         Span::from(" Select  "),
         Span::styled(
-            "q",
+            "Esc",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::from(" Quit"),
+        Span::from(" Quit  "),
+        Span::styled(
+            "Ctrl+C",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" Exit App"),
     ])];
     let help = Paragraph::new(help_text)
         .alignment(Alignment::Center)
@@ -337,9 +364,9 @@ fn draw_quiz(f: &mut ratatui::Frame, session: &QuizSession) {
     f.render_widget(question, chunks[1]);
 
     let answer_title = if session.showing_answer {
-        "Answer (Press Enter to continue)"
+        "Answer (Press Enter to continue, Esc to quit)"
     } else {
-        "Your Answer (Press Enter to submit)"
+        "Your Answer (Press Enter to submit, Esc to quit)"
     };
 
     let answer_content = if session.showing_answer {
@@ -386,6 +413,13 @@ fn draw_quiz(f: &mut ratatui::Frame, session: &QuizSession) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::from(" Submit Answer  "),
+            Span::styled(
+                "Esc",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::from(" Quit to Menu  "),
         ]));
     }
     help_text.push(Line::from(vec![
@@ -404,12 +438,19 @@ fn draw_quiz(f: &mut ratatui::Frame, session: &QuizSession) {
         ),
         Span::from(" Previous  "),
         Span::styled(
-            "m",
+            "Esc",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::from(" Menu"),
+        Span::from(" Quit to Menu  "),
+        Span::styled(
+            "Ctrl+C",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" Exit App"),
     ]));
 
     let help = Paragraph::new(help_text)
@@ -418,11 +459,65 @@ fn draw_quiz(f: &mut ratatui::Frame, session: &QuizSession) {
     f.render_widget(help, chunks[3]);
 }
 
+fn draw_quit_confirmation(f: &mut ratatui::Frame) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(5)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(5),
+            Constraint::Length(3),
+        ])
+        .split(f.area());
+
+    let title = Paragraph::new("Quit to Menu")
+        .style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(title, chunks[0]);
+
+    let message = Paragraph::new("Return to main menu?")
+        .style(Style::default().fg(Color::White))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(message, chunks[1]);
+
+    let help_text = vec![Line::from(vec![
+        Span::styled(
+            "y",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" Yes (Return to Menu)  "),
+        Span::styled(
+            "n",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" No (Continue Quiz)  "),
+        Span::styled(
+            "Ctrl+C",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" Exit App"),
+    ])];
+    let help = Paragraph::new(help_text)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(help, chunks[2]);
+}
+
 fn handle_quiz_input(session: &mut QuizSession, key: KeyCode, app_state: &mut AppState) {
     if !session.showing_answer {
         match key {
-            KeyCode::Char('m') => {
-                *app_state = AppState::Menu;
+            KeyCode::Esc => {
+                *app_state = AppState::QuizQuitConfirm;
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
@@ -464,8 +559,8 @@ fn handle_quiz_input(session: &mut QuizSession, key: KeyCode, app_state: &mut Ap
         }
     } else {
         match key {
-            KeyCode::Char('m') => {
-                *app_state = AppState::Menu;
+            KeyCode::Esc => {
+                *app_state = AppState::QuizQuitConfirm;
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
@@ -570,7 +665,14 @@ fn draw_summary(f: &mut ratatui::Frame, session: &QuizSession) {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::from(" Quit"),
+        Span::from(" Quit  "),
+        Span::styled(
+            "Ctrl+C",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" Exit App"),
     ])];
     let help = Paragraph::new(help_text)
         .alignment(Alignment::Center)
@@ -1149,5 +1251,59 @@ mod tests {
         assert!(buffer.is_empty());
         buffer.pop();
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_app_state_quiz_quit_confirm() {
+        let state = AppState::QuizQuitConfirm;
+        assert_eq!(state, AppState::QuizQuitConfirm);
+    }
+
+    #[test]
+    fn test_app_state_full_transitions() {
+        assert_eq!(AppState::Menu, AppState::Menu);
+        assert_eq!(AppState::Quiz, AppState::Quiz);
+        assert_eq!(AppState::QuizQuitConfirm, AppState::QuizQuitConfirm);
+        assert_eq!(AppState::Summary, AppState::Summary);
+    }
+
+    #[test]
+    fn test_quiz_input_quit_when_not_showing_answer() {
+        let cards = vec![Flashcard {
+            question: "Q1".to_string(),
+            answer: "A1".to_string(),
+            user_answer: None,
+        }];
+        let mut session = QuizSession {
+            flashcards: cards,
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: String::new(),
+        };
+
+        let mut app_state = AppState::Quiz;
+        handle_quiz_input(&mut session, KeyCode::Esc, &mut app_state);
+        assert_eq!(app_state, AppState::QuizQuitConfirm);
+    }
+
+    #[test]
+    fn test_quiz_input_quit_when_showing_answer() {
+        let cards = vec![Flashcard {
+            question: "Q1".to_string(),
+            answer: "A1".to_string(),
+            user_answer: Some("Answer".to_string()),
+        }];
+        let mut session = QuizSession {
+            flashcards: cards,
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: true,
+            input_buffer: String::new(),
+        };
+
+        let mut app_state = AppState::Quiz;
+        handle_quiz_input(&mut session, KeyCode::Esc, &mut app_state);
+        assert_eq!(app_state, AppState::QuizQuitConfirm);
     }
 }
