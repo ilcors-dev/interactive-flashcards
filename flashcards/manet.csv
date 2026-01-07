@@ -1,0 +1,61 @@
+What is the defining characteristic of a Mobile Ad Hoc Network (MANET)?,It is an infrastructure-less network where all nodes are potentially mobile and communicate directly with each other.
+"In MANET routing, what is the 'flooding' protocol?",A simple routing protocol where an incoming packet is forwarded on all outgoing lines except the one it arrived on.
+What is the primary drawback of using flooding for data packet routing in MANETs?,"It creates a 'broadcast storm,' leading to excessive overhead, collisions, and resource consumption, making it impractical for data transmission."
+Dynamic Source Routing (DSR) is classified as what type of routing protocol?,It is a reactive (on-demand) protocol where the sender is responsible for identifying the entire routing path.
+"In DSR, what process does a source node initiate when it needs to send a packet to a destination for which it has no known route?",It initiates a route discovery process by flooding a Route Request (RREQ) packet.
+What information does each intermediate node add to an RREQ packet in DSR before forwarding it?,"Each node adds its own identifier to the RREQ packet's header, progressively building the path from the source."
+How does the destination node in DSR respond after receiving the first RREQ packet?,"It sends a Route Reply (RREP) packet back to the source via unicast, using the reverse of the path contained in the received RREQ."
+What critical information is included in the header of data packets sent using DSR?,The entire routing path from source to destination is included in the header of every data packet.
+What is 'path caching' in the context of DSR?,It is a mechanism where intermediate nodes that overhear RREP packets can cache the routing information for future use.
+"In DSR, what message is generated when a node detects a link failure in an active route?",A Route Error (RERR) message is generated and sent to the original source of the packet to invalidate the broken path.
+What is a major advantage of the DSR protocol?,"It incurs zero overhead for route maintenance when nodes are not communicating, as routes are only established when needed."
+"What is a significant disadvantage of the DSR protocol, especially for long paths?",The need to include the full path in every data packet header causes significant overhead that grows with path length.
+How does Ad hoc On-demand Distance Vector (AODV) routing differ fundamentally from DSR?,"AODV is a distance-vector protocol where nodes maintain routing tables with next-hop information, rather than including the full path in packet headers (source routing)."
+"In AODV, what is the purpose of the 'reverse path setup' during the RREQ flooding phase?","Each node that forwards the RREQ creates a temporary entry pointing back to the node from which it received the RREQ, establishing a path for the RREP."
+What role do Destination Sequence Numbers (DSNs) play in AODV?,"DSNs are used to ensure loop freedom and to determine the freshness of routing information, preventing the use of stale routes."
+"In AODV, what happens to a routing table entry if it is not used for a certain period?",The entry is invalidated and eventually deleted based on a timeout mechanism to remove stale routes.
+"When a link break is detected in an AODV network, how are upstream nodes notified?","The node that detects the break sends a Route Error (RERR) message to its active neighbors, which then propagate the message upstream towards the source(s)."
+What optimization in AODV allows an intermediate node to respond to an RREQ on behalf of the destination?,An intermediate node with a fresh enough route to the destination in its routing table can send a Route Reply (RREP) directly to the source.
+What potential problem can arise from allowing intermediate nodes to reply to RREQs in AODV?,"It can lead to the formation of routing loops, especially in the presence of link failures and lost RERR packets, although DSNs help mitigate this."
+"In AODV's mobility-related path maintenance, what does an RERR packet contain when a link breaks?",The RERR packet contains a list of all destinations that are no longer reachable due to the link failure.
+What type of information is required for Greedy Perimeter Stateless Routing (GPSR) to function?,GPSR requires each node to know its own geographic position and the position of the destination node.
+"What is the primary forwarding strategy in GPSR, known as 'greedy forwarding'?",A node forwards a packet to the neighbor that is geographically closest to the final destination.
+Under what condition does the 'greedy forwarding' strategy in GPSR fail?,"It fails when a node reaches a local maximum, meaning none of its immediate neighbors are closer to the destination than itself."
+"When greedy forwarding fails in GPSR, what strategy is employed to navigate around the 'void'?","The protocol switches to 'perimeter forwarding' (or face routing), which uses the right-hand rule to traverse the edges of a planar graph."
+The Temporally Ordered Routing Algorithm (TORA) is designed to be highly adaptive by being based on the concept of _____.,link-reversal
+What is the fundamental data structure TORA creates for routing toward a destination?,It creates a Directed Acyclic Graph (DAG) rooted at the destination.
+"In TORA, what metric is used to establish the direction of links in the DAG?","A 'height' metric, which is a quintuple, is assigned to each node, and links are directed from nodes with higher height to nodes with lower height."
+How does TORA handle route maintenance when a link failure partitions the network?,"It performs a localized reconfiguration of a small set of nodes near the failure by reversing links, rather than propagating a route error message through the entire network."
+"In TORA, a node that loses its last downstream link generates a _____ packet to find a new route.",CLR (Clear)
+What is the main advantage of TORA's route maintenance mechanism?,It minimizes control message overhead by localizing the reaction to topological changes to a small set of nodes near the failure.
+What is a primary disadvantage of the paths created by TORA after a local reconfiguration?,"The resulting paths may be suboptimal in terms of hop count or latency, as the algorithm prioritizes quick repair over path optimality."
+What is the core principle of Wi-Fi Direct that distinguishes it from traditional Wi-Fi infrastructure mode?,A Wi-Fi Direct device can dynamically act as both a client and an Access Point (the 'P2P Group Owner').
+"In a Wi-Fi Direct group, what is the device that functions as the Access Point called?",The P2P Group Owner (P2P GO).
+What happens to a Wi-Fi Direct group if the P2P GO leaves?,"The group is dissolved and must be re-established, as the role of P2P GO cannot be transferred."
+Describe the 'standard' method of Wi-Fi Direct group formation.,Two or more devices negotiate to determine which will become the P2P GO based on their capabilities and a random tie-breaker value.
+What is the 'autonomous' method of Wi-Fi Direct group formation?,A single device unilaterally decides to become a P2P GO and creates a group that other devices can then discover and join without negotiation.
+What is a 'persistent' Wi-Fi Direct group?,"A group where devices have stored the credentials from a previous session, allowing them to re-establish the group quickly without full negotiation or discovery."
+What is the purpose of the 'Opportunistic Power Save' (OPS) protocol in Wi-Fi Direct?,"It allows a P2P GO to enter a sleep mode when all of its associated clients are also in sleep mode, conserving energy."
+How does the 'Notice of Absence' (NoA) protocol help save power in Wi-Fi Direct?,It allows the P2P GO to broadcast a schedule of future intervals during which it will be absent (in sleep mode) and clients are not allowed to access the channel.
+"The NoA schedule in Wi-Fi Direct is defined by four parameters: Count, Duration, Interval, and _____.",Start Time
+What security mechanism must Wi-Fi Direct devices implement for simplified and secure connection setup?,"Wi-Fi Protected Setup (WPS), which typically uses a PIN or a push-button method."
+"In WPS terminology for Wi-Fi Direct, the P2P GO must implement an 'internal registrar' and the P2P Client must implement an _____.",enrollee
+What kind of network is ZigBee (IEEE 802.15.4) specifically designed for?,"It is designed for low-power, low-data-rate wireless sensor and actuator networks."
+"In a ZigBee network, which device is unique and responsible for initiating the network formation?",The PAN coordinator.
+What is the difference between a Full Function Device (FFD) and a Reduced Function Device (RFD) in ZigBee?,"An FFD can participate in routing messages, whereas an RFD can only send and receive packets but cannot act as a router."
+ZigBee's 'non-beaconed network' mode of channel access relies on what algorithm?,It relies on CSMA/CA (Carrier Sense Multiple Access with Collision Avoidance).
+"In a ZigBee 'beacon-enabled network', how are collisions avoided?","The PAN coordinator periodically transmits beacons to establish which node has the right to transmit in the next time slot, similar to a time-division scheme."
+What are the two primary connection types in classic Bluetooth?,Synchronous Connection-Oriented (SCO) for voice/audio and Asynchronous Connection-Less (ACL) for data.
+A basic Bluetooth network topology with one master and up to seven active slaves is called a _____.,Piconet
+What is a 'Scatternet' in Bluetooth?,"A collection of two or more interconnected piconets, where a device can be a master in one piconet and a slave in another."
+What technique does Bluetooth use to mitigate interference in the 2.4 GHz band?,Frequency-Hopping Spread Spectrum (FHSS).
+The primary difference in the discovery process of Bluetooth Low Energy (BLE) compared to classic Bluetooth is the use of _____ packets.,advertising
+"In IEEE 802.11 (Wi-Fi), what is the purpose of the MACA (Multiple Access with Collision Avoidance) algorithm involving RTS/CTS packets?",To mitigate the hidden node problem by allowing nodes to reserve the medium before transmitting data.
+What are the two principal operating modes of Wi-Fi?,"Base station (infrastructure) mode, where clients connect to an Access Point, and ad hoc mode, where clients connect directly to each other."
+What is the purpose of the Media Independent Handover (MIH) service defined in IEEE 802.21?,"To facilitate seamless handovers between different wireless network technologies, such as Wi-Fi and cellular."
+What is a major advantage of a Wi-Fi Mesh network (802.11s) for metropolitan coverage?,"It offers robustness and reduced costs because only a few access points need a wired connection to the internet, while others communicate wirelessly."
+What is the name of the IEEE 802.11 amendment designed specifically for wireless access in vehicular environments (V2X)?,IEEE 802.11p.
+"In a cellular network architecture, what is the role of the Mobile Switching Center (MSC)?","The MSC is the central point for a group of base stations, handling call switching, routing, and managing mobility and handoffs."
+What is the goal of a handoff procedure in a cellular network?,"To seamlessly transfer an active connection from one base station (cell) to another as the user moves, without interrupting the service."
+"In a GSM handoff, what is 'proactive allocation'?","It's when the new Base Station System (BSS) allocates resources for the mobile node *before* the node actually connects, minimizing switching time."
+"In a GSM handoff between different MSCs, what is the 'Anchor MSC'?","It is the first MSC that the mobile node was connected to at the start of the call, which remains fixed to correctly route the call as the node moves between other MSCs."

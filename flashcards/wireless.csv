@@ -1,0 +1,38 @@
+"What is the term for the signal propagation phenomenon where large obstacles like buildings or hills obstruct the line of sight, causing significant signal attenuation?","Shadowing, also known as slow fading."
+"What phenomenon occurs when a wireless signal travels multiple paths to the receiver, causing constructive and destructive interference and rapid fluctuations in signal strength?","Multipath fading, specifically Rayleigh fading (or fast fading)."
+"In IEEE 802.3 Ethernet, what is the name of the algorithm used to handle collisions, where nodes wait a random time before retransmitting?",Binary exponential back-off.
+"In binary exponential back-off, after 'k' collisions, a node chooses a random time slot from the range [0, 2^n), where n is calculated as _____.","n = min(10, k)"
+"What is the name of the problem in wireless networks where a node A is visible to an access point B, but not to another node C which is also communicating with B, potentially causing collisions at B?",The hidden node problem.
+"What is the term for the situation where a node is prevented from transmitting to another node because it overhears a transmission from a third node, even though its own transmission would not cause a collision?",The exposed node problem.
+What is the first step in the Multiple Access with Collision Avoidance (MACA) protocol as included in WiFi?,"The sending node (B) transmits a Ready To Send (RTS) packet to the receiving node (C), including the length of the data to be transmitted."
+"In the MACA protocol, after receiving an RTS packet, what does the receiving node (C) do?",It replies with a Clear To Send (CTS) packet to the sending node (B).
+"What is the primary function of the IEEE 802.16 standard, also known as WiMAX?","To provide wireless broadband access over large areas like buildings and cities, where WiFi's range is insufficient."
+"The IEEE 802.11s standard defines a _____ network, where access points can communicate wirelessly with each other to form a robust infrastructure.",mesh
+What is a major disadvantage of IEEE 802.11s (WiFi Mesh) networks?,"Routing complexity, implementation difficulty, and high overhead."
+"Which IEEE standard is specifically designed for wireless access in vehicular environments, supporting data exchange between high-speed vehicles and roadside infrastructure?",IEEE 802.11p.
+"In a cellular network architecture, what is the function of the Mobile Switching Center (MSC)?",It manages handoffs and routes calls to and from the fixed telephone network and other MSCs.
+"In GSM, what is the term for the database that stores information about a subscriber's home network and current location (which MSC they are under)?",Home Location Register (HLR).
+What are the two main reasons a handoff is performed in a cellular network?,To connect to a Base Station System (BSS) with a stronger signal (improving quality and saving battery) and to balance the connection load between different BSSs.
+"In a GSM handoff under the same MSC, what is the first step initiated by the old BSS?","The old BSS communicates the need for a handoff to the MSC, providing a list of potential new BSSs."
+"During a GSM handoff, after the MSC selects a new BSS, what action does the new BSS perform before the mobile node has even connected to it?","It performs proactive allocation, reserving resources (like a new radio channel) for the incoming mobile node."
+What is the final step (step 8) in a GSM handoff procedure under the same MSC?,"The MSC releases the resources allocated for the old path and informs the old BSS, which then deallocates the old radio channel."
+"In a GSM handoff between different MSCs, what is the term for the first destination MSC that is contacted for the mobile node?",The Anchor MSC.
+How is a call maintained when a mobile node moves across multiple MSCs during a single call?,"A chain of MSCs is formed, where each new MSC visited is added to the end of the chain, ensuring the call is correctly routed back to the Anchor MSC."
+"What is the basic network topology in Bluetooth, consisting of one master and up to seven active slaves?",A piconet.
+A key difference between Bluetooth and WiFi is that Bluetooth communication is point-to-point between master and slave and requires a preliminary _____ phase.,discovery of devices and services
+"What is the first phase in building a Bluetooth piconet topology, where a master device searches for other devices in range?",The inquiry phase.
+"After the inquiry phase, what is the name of the phase where the master establishes a connection with a specific slave device?",The page phase.
+"What technique does Bluetooth use in the 2.4GHz band to avoid interference, involving rapidly changing transmission frequencies?",Frequency hopping.
+"In Bluetooth, the frequency hopping sequence for a piconet is determined by the _____ address.",master's
+Bluetooth uses a Time Division Duplex (TDD) scheme where the channel is divided into slots of what duration?,625 microseconds.
+"What type of Bluetooth connection is a best-effort, packet-switched service used for data traffic?",Asynchronous Connection-Less (ACL).
+"Which type of Bluetooth connection is a circuit-switched service designed for real-time traffic like voice, which does not use retransmissions?",Synchronous Connection-Oriented (SCO).
+"What is the term for a Bluetooth topology formed by connecting multiple piconets, where a device can be a master in one piconet and a slave in another?",A scatternet.
+What is the primary advantage of Bluetooth Low Energy (BLE) compared to classic Bluetooth?,Significantly reduced power consumption.
+How many separate advertising channels does Bluetooth Low Energy (BLE) use for its discovery process to reduce interference and power consumption?,Three channels.
+"What is the IEEE standard specifically designed for low-rate wireless personal area networks (LR-WPANs), forming the basis for technologies like ZigBee?",IEEE 802.15.4.
+"In a ZigBee network, what is the role of the device that is unique, initiates the network formation, and acts as a router?",The PAN coordinator.
+What is the difference between a Full Function Device (FFD) and a Reduced Function Device (RFD) in ZigBee?,"An FFD can participate in routing messages, whereas an RFD can only send and receive packets but cannot route."
+A ZigBee network that uses CSMA/CA for channel access without any central coordination is known as a _____-_____ network.,non-beaconed
+"What type of ZigBee network is suitable for applications with latency constraints, where a PAN coordinator transmits periodic control messages to schedule transmissions and avoid collisions?",A beacon-enabled network.
+"Besides star and mesh, what is the third type of topology supported by ZigBee, which is a hierarchical structure?",Cluster Tree.
