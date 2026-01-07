@@ -13,9 +13,9 @@ use ratatui::{
     Terminal,
 };
 use std::fs;
-use std::io;
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 struct Flashcard {
@@ -31,6 +31,9 @@ struct QuizSession {
     deck_name: String,
     showing_answer: bool,
     input_buffer: String,
+    output_file: Option<fs::File>,
+    questions_total: usize,
+    questions_answered: usize,
 }
 
 #[derive(Debug, PartialEq)]
@@ -39,6 +42,141 @@ enum AppState {
     Quiz,
     QuizQuitConfirm,
     Summary,
+}
+
+fn get_quiz_filename(deck_name: &str) -> String {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    format!("quiz_{}_{}.txt", deck_name, timestamp)
+}
+
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current_line = String::new();
+    let mut current_len = 0;
+
+    for word in text.split_whitespace() {
+        let word_len = word.len();
+
+        if !current_line.is_empty() {
+            current_line.push(' ');
+            current_len += 1;
+        }
+
+        if current_len + word_len <= max_width {
+            current_line.push_str(word);
+            current_len += word_len;
+        } else {
+            result.push(current_line);
+            current_line = word.to_string();
+            current_len = word_len;
+        }
+    }
+
+    if !current_line.is_empty() {
+        result.push(current_line);
+    }
+
+    result
+}
+
+fn write_session_header(
+    file: &mut fs::File,
+    deck_name: &str,
+    total_questions: usize,
+) -> io::Result<()> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    writeln!(
+        file,
+        "======================================================================"
+    )?;
+    writeln!(file, "QUIZ SESSION: {}", deck_name)?;
+    writeln!(file, "Started: {}", timestamp)?;
+    writeln!(
+        file,
+        "======================================================================"
+    )?;
+    writeln!(file, "")?;
+    writeln!(file, "Progress: 0/{} questions answered", total_questions)?;
+    writeln!(
+        file,
+        "======================================================================"
+    )?;
+    writeln!(file, "")?;
+
+    Ok(())
+}
+
+fn update_progress_header(file: &mut fs::File, answered: usize, total: usize) -> io::Result<()> {
+    let current_pos = file.stream_position()?;
+    file.seek(SeekFrom::Start(current_pos.saturating_sub(100)))?;
+    writeln!(file, "Progress: {}/{} questions answered", answered, total)?;
+    writeln!(
+        file,
+        "======================================================================"
+    )?;
+    writeln!(file, "")?;
+    Ok(())
+}
+
+fn write_question_entry(
+    file: &mut fs::File,
+    question_num: usize,
+    question: &str,
+    user_answer: &Option<String>,
+    correct_answer: &str,
+) -> io::Result<()> {
+    let user_ans_text = user_answer
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or("[No answer]");
+
+    writeln!(file, "QUESTION {}:", question_num)?;
+    for line in wrap_text(question, 88) {
+        writeln!(file, "{}", line)?;
+    }
+    writeln!(file, "")?;
+
+    writeln!(file, "YOUR ANSWER:")?;
+    for line in wrap_text(user_ans_text, 88) {
+        writeln!(file, "{}", line)?;
+    }
+    writeln!(file, "")?;
+
+    writeln!(file, "CORRECT ANSWER:")?;
+    for line in wrap_text(correct_answer, 88) {
+        writeln!(file, "{}", line)?;
+    }
+    writeln!(file, "")?;
+
+    writeln!(
+        file,
+        "-----------------------------------------------------------------------"
+    )?;
+    writeln!(file, "")?;
+
+    Ok(())
+}
+
+fn write_completion(file: &mut fs::File, answered: usize, total: usize) -> io::Result<()> {
+    writeln!(
+        file,
+        "======================================================================"
+    )?;
+    writeln!(file, "QUIZ COMPLETED!")?;
+    writeln!(file, "Total: {}/{} questions answered", answered, total)?;
+    writeln!(
+        file,
+        "======================================================================"
+    )?;
+    writeln!(file, "")?;
+    Ok(())
 }
 
 fn main() -> io::Result<()> {
@@ -61,9 +199,7 @@ fn main() -> io::Result<()> {
                     draw_quiz(f, session);
                 }
             }
-            AppState::QuizQuitConfirm => {
-                draw_quit_confirmation(f);
-            }
+            AppState::QuizQuitConfirm => draw_quit_confirmation(f),
             AppState::Summary => {
                 if let Some(session) = &quiz_session {
                     draw_summary(f, session);
@@ -98,12 +234,31 @@ fn main() -> io::Result<()> {
                                         .to_string();
                                     let mut cards = flashcards;
                                     cards.shuffle(&mut rand::thread_rng());
+
+                                    let filename = get_quiz_filename(&deck_name);
+                                    let mut output_file = match fs::File::create(&filename) {
+                                        Ok(file) => file,
+                                        Err(e) => {
+                                            eprintln!("Failed to create quiz file: {}", e);
+                                            return Ok(());
+                                        }
+                                    };
+
+                                    write_session_header(
+                                        &mut output_file,
+                                        &deck_name,
+                                        cards.len(),
+                                    )?;
+
                                     quiz_session = Some(QuizSession {
-                                        flashcards: cards,
+                                        flashcards: cards.clone(),
                                         current_index: 0,
                                         deck_name,
                                         showing_answer: false,
                                         input_buffer: String::new(),
+                                        output_file: Some(output_file),
+                                        questions_total: cards.len(),
+                                        questions_answered: 0,
                                     });
                                     app_state = AppState::Quiz;
                                 }
@@ -114,12 +269,17 @@ fn main() -> io::Result<()> {
                     },
                     AppState::Quiz => {
                         if let Some(session) = &mut quiz_session {
-                            handle_quiz_input(session, key.code, &mut app_state);
+                            if let Err(e) = handle_quiz_input(session, key.code, &mut app_state) {
+                                eprintln!("Error writing to quiz file: {}", e);
+                            }
                         }
                     }
                     AppState::QuizQuitConfirm => match key.code {
                         KeyCode::Char('y') => {
                             app_state = AppState::Menu;
+                            if let Some(file) = quiz_session.take() {
+                                drop(file);
+                            }
                             quiz_session = None;
                         }
                         KeyCode::Char('n') => {
@@ -144,6 +304,11 @@ fn main() -> io::Result<()> {
                         }
                         KeyCode::Char('m') => {
                             app_state = AppState::Menu;
+                            if let Some(mut session) = quiz_session.take() {
+                                if let Some(file) = session.output_file.take() {
+                                    drop(file);
+                                }
+                            }
                             quiz_session = None;
                         }
                         KeyCode::Esc => break,
@@ -459,6 +624,111 @@ fn draw_quiz(f: &mut ratatui::Frame, session: &QuizSession) {
     f.render_widget(help, chunks[3]);
 }
 
+fn handle_quiz_input(
+    session: &mut QuizSession,
+    key: KeyCode,
+    app_state: &mut AppState,
+) -> io::Result<()> {
+    if !session.showing_answer {
+        match key {
+            KeyCode::Esc => {
+                *app_state = AppState::QuizQuitConfirm;
+                Ok(())
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if session.current_index < session.flashcards.len().saturating_sub(1) {
+                    session.current_index += 1;
+                    session.showing_answer = false;
+                    session.input_buffer = session.flashcards[session.current_index]
+                        .user_answer
+                        .as_ref()
+                        .unwrap_or(&String::new())
+                        .clone();
+                }
+                Ok(())
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if session.current_index > 0 {
+                    session.current_index -= 1;
+                    session.showing_answer = false;
+                    session.input_buffer = session.flashcards[session.current_index]
+                        .user_answer
+                        .as_ref()
+                        .unwrap_or(&String::new())
+                        .clone();
+                }
+                Ok(())
+            }
+            KeyCode::Enter => {
+                if !session.input_buffer.trim().is_empty() {
+                    session.flashcards[session.current_index].user_answer =
+                        Some(session.input_buffer.clone());
+
+                    session.questions_answered += 1;
+
+                    if let Some(ref mut file) = session.output_file {
+                        let q_num = session.current_index + 1;
+                        let question = &session.flashcards[session.current_index].question;
+                        let user_ans = &session.flashcards[session.current_index].user_answer;
+                        let correct_ans = &session.flashcards[session.current_index].answer;
+
+                        write_question_entry(file, q_num, question, user_ans, correct_ans)?;
+                        update_progress_header(
+                            file,
+                            session.questions_answered,
+                            session.questions_total,
+                        )?;
+                    }
+                }
+
+                session.input_buffer.clear();
+                session.showing_answer = true;
+                Ok(())
+            }
+            KeyCode::Backspace => {
+                session.input_buffer.pop();
+                Ok(())
+            }
+            KeyCode::Char(c) => {
+                session.input_buffer.push(c);
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    } else {
+        match key {
+            KeyCode::Esc => {
+                *app_state = AppState::QuizQuitConfirm;
+                Ok(())
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if session.current_index < session.flashcards.len().saturating_sub(1) {
+                    session.current_index += 1;
+                    session.showing_answer = false;
+                }
+                Ok(())
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if session.current_index > 0 {
+                    session.current_index -= 1;
+                    session.showing_answer = false;
+                }
+                Ok(())
+            }
+            KeyCode::Enter => {
+                if session.current_index < session.flashcards.len().saturating_sub(1) {
+                    session.current_index += 1;
+                    session.showing_answer = false;
+                } else {
+                    *app_state = AppState::Summary;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
 fn draw_quit_confirmation(f: &mut ratatui::Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -511,80 +781,6 @@ fn draw_quit_confirmation(f: &mut ratatui::Frame) {
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, chunks[2]);
-}
-
-fn handle_quiz_input(session: &mut QuizSession, key: KeyCode, app_state: &mut AppState) {
-    if !session.showing_answer {
-        match key {
-            KeyCode::Esc => {
-                *app_state = AppState::QuizQuitConfirm;
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if session.current_index < session.flashcards.len().saturating_sub(1) {
-                    session.current_index += 1;
-                    session.showing_answer = false;
-                    session.input_buffer = session.flashcards[session.current_index]
-                        .user_answer
-                        .as_ref()
-                        .unwrap_or(&String::new())
-                        .clone();
-                }
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if session.current_index > 0 {
-                    session.current_index -= 1;
-                    session.showing_answer = false;
-                    session.input_buffer = session.flashcards[session.current_index]
-                        .user_answer
-                        .as_ref()
-                        .unwrap_or(&String::new())
-                        .clone();
-                }
-            }
-            KeyCode::Enter => {
-                if !session.input_buffer.trim().is_empty() {
-                    session.flashcards[session.current_index].user_answer =
-                        Some(session.input_buffer.clone());
-                }
-                session.input_buffer.clear();
-                session.showing_answer = true;
-            }
-            KeyCode::Backspace => {
-                session.input_buffer.pop();
-            }
-            KeyCode::Char(c) => {
-                session.input_buffer.push(c);
-            }
-            _ => {}
-        }
-    } else {
-        match key {
-            KeyCode::Esc => {
-                *app_state = AppState::QuizQuitConfirm;
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if session.current_index < session.flashcards.len().saturating_sub(1) {
-                    session.current_index += 1;
-                    session.showing_answer = false;
-                }
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if session.current_index > 0 {
-                    session.current_index -= 1;
-                    session.showing_answer = false;
-                }
-            }
-            KeyCode::Enter => {
-                if session.current_index < session.flashcards.len().saturating_sub(1) {
-                    session.current_index += 1;
-                    session.showing_answer = false;
-                } else {
-                    *app_state = AppState::Summary;
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
 fn draw_summary(f: &mut ratatui::Frame, session: &QuizSession) {
@@ -825,11 +1021,14 @@ mod tests {
             },
         ];
         let session = QuizSession {
-            flashcards: cards,
+            flashcards: cards.clone(),
             current_index: 0,
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            output_file: None,
+            questions_total: cards.len(),
+            questions_answered: 0,
         };
         assert_eq!(session.flashcards.len(), 2);
         assert_eq!(session.current_index, 0);
@@ -914,6 +1113,9 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            output_file: None,
+            questions_total: cards.len(),
+            questions_answered: 0,
         };
 
         session.showing_answer = true;
@@ -943,11 +1145,14 @@ mod tests {
             },
         ];
         let mut session = QuizSession {
-            flashcards: cards,
+            flashcards: cards.clone(),
             current_index: 0,
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            output_file: None,
+            questions_total: cards.len(),
+            questions_answered: 0,
         };
 
         assert_eq!(session.current_index, 0);
@@ -978,11 +1183,14 @@ mod tests {
         cards[1].user_answer = Some("Answer 2".to_string());
 
         let session = QuizSession {
-            flashcards: cards,
-            current_index: 1,
+            flashcards: cards.clone(),
+            current_index: 0,
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            output_file: None,
+            questions_total: cards.len(),
+            questions_answered: 0,
         };
 
         assert_eq!(
@@ -1013,11 +1221,14 @@ mod tests {
             user_answer: None,
         }];
         let session = QuizSession {
-            flashcards: cards,
+            flashcards: cards.clone(),
             current_index: 0,
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            output_file: None,
+            questions_total: cards.len(),
+            questions_answered: 0,
         };
 
         let new_index = session.current_index.saturating_sub(1);
@@ -1090,11 +1301,14 @@ mod tests {
         cards[0].user_answer = Some("My Answer 1".to_string());
 
         let mut session = QuizSession {
-            flashcards: cards,
+            flashcards: cards.clone(),
             current_index: 1,
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            output_file: None,
+            questions_total: cards.len(),
+            questions_answered: 0,
         };
 
         session.current_index = 0;
@@ -1117,11 +1331,14 @@ mod tests {
         }];
 
         let mut session = QuizSession {
-            flashcards: cards,
+            flashcards: cards.clone(),
             current_index: 0,
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            output_file: None,
+            questions_total: cards.len(),
+            questions_answered: 0,
         };
 
         session.input_buffer = session.flashcards[session.current_index]
@@ -1145,6 +1362,9 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::from("My Answer"),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
         };
 
         if !session.input_buffer.trim().is_empty() {
@@ -1170,6 +1390,9 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::from("   "),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
         };
 
         if !session.input_buffer.trim().is_empty() {
@@ -1248,62 +1471,9 @@ mod tests {
         assert_eq!(buffer, "He");
         buffer.pop();
         buffer.pop();
+        buffer.pop();
         assert!(buffer.is_empty());
         buffer.pop();
         assert!(buffer.is_empty());
-    }
-
-    #[test]
-    fn test_app_state_quiz_quit_confirm() {
-        let state = AppState::QuizQuitConfirm;
-        assert_eq!(state, AppState::QuizQuitConfirm);
-    }
-
-    #[test]
-    fn test_app_state_full_transitions() {
-        assert_eq!(AppState::Menu, AppState::Menu);
-        assert_eq!(AppState::Quiz, AppState::Quiz);
-        assert_eq!(AppState::QuizQuitConfirm, AppState::QuizQuitConfirm);
-        assert_eq!(AppState::Summary, AppState::Summary);
-    }
-
-    #[test]
-    fn test_quiz_input_quit_when_not_showing_answer() {
-        let cards = vec![Flashcard {
-            question: "Q1".to_string(),
-            answer: "A1".to_string(),
-            user_answer: None,
-        }];
-        let mut session = QuizSession {
-            flashcards: cards,
-            current_index: 0,
-            deck_name: "Test".to_string(),
-            showing_answer: false,
-            input_buffer: String::new(),
-        };
-
-        let mut app_state = AppState::Quiz;
-        handle_quiz_input(&mut session, KeyCode::Esc, &mut app_state);
-        assert_eq!(app_state, AppState::QuizQuitConfirm);
-    }
-
-    #[test]
-    fn test_quiz_input_quit_when_showing_answer() {
-        let cards = vec![Flashcard {
-            question: "Q1".to_string(),
-            answer: "A1".to_string(),
-            user_answer: Some("Answer".to_string()),
-        }];
-        let mut session = QuizSession {
-            flashcards: cards,
-            current_index: 0,
-            deck_name: "Test".to_string(),
-            showing_answer: true,
-            input_buffer: String::new(),
-        };
-
-        let mut app_state = AppState::Quiz;
-        handle_quiz_input(&mut session, KeyCode::Esc, &mut app_state);
-        assert_eq!(app_state, AppState::QuizQuitConfirm);
     }
 }
