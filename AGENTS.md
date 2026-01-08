@@ -14,3 +14,4 @@ The CSV files contain pairs of questions (first column) and answers (second colu
   - Unit tests must not be flaky and redundant.
 - Prior to every change, seek for documentation and / or read git history to understand the context of what is being changed and why.
 - Follow consistent code formatting. Use `cargo fmt` to format the code.
+- Run `cargo clippy --fix --bin "interactive-flashcards" --allow-dirty` to automatically apply linter suggestions. Fix any remaining warnings manually that cannot be fixed automatically.

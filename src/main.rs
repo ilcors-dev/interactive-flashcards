@@ -102,13 +102,13 @@ fn write_session_header(
         file,
         "======================================================================"
     )?;
-    writeln!(file, "")?;
+    writeln!(file)?;
     writeln!(file, "Progress: 0/{} questions answered", total_questions)?;
     writeln!(
         file,
         "======================================================================"
     )?;
-    writeln!(file, "")?;
+    writeln!(file)?;
 
     Ok(())
 }
@@ -121,7 +121,7 @@ fn update_progress_header(file: &mut fs::File, answered: usize, total: usize) ->
         file,
         "======================================================================"
     )?;
-    writeln!(file, "")?;
+    writeln!(file)?;
     Ok(())
 }
 
@@ -141,41 +141,26 @@ fn write_question_entry(
     for line in wrap_text(question, 88) {
         writeln!(file, "{}", line)?;
     }
-    writeln!(file, "")?;
+    writeln!(file)?;
 
     writeln!(file, "YOUR ANSWER:")?;
     for line in wrap_text(user_ans_text, 88) {
         writeln!(file, "{}", line)?;
     }
-    writeln!(file, "")?;
+    writeln!(file)?;
 
     writeln!(file, "CORRECT ANSWER:")?;
     for line in wrap_text(correct_answer, 88) {
         writeln!(file, "{}", line)?;
     }
-    writeln!(file, "")?;
+    writeln!(file)?;
 
     writeln!(
         file,
         "-----------------------------------------------------------------------"
     )?;
-    writeln!(file, "")?;
+    writeln!(file)?;
 
-    Ok(())
-}
-
-fn write_completion(file: &mut fs::File, answered: usize, total: usize) -> io::Result<()> {
-    writeln!(
-        file,
-        "======================================================================"
-    )?;
-    writeln!(file, "QUIZ COMPLETED!")?;
-    writeln!(file, "Total: {}/{} questions answered", answered, total)?;
-    writeln!(
-        file,
-        "======================================================================"
-    )?;
-    writeln!(file, "")?;
     Ok(())
 }
 
@@ -207,17 +192,15 @@ fn main() -> io::Result<()> {
             }
         })?;
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()? {
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     break;
                 }
                 match app_state {
                     AppState::Menu => match key.code {
                         KeyCode::Up => {
-                            if selected_file_index > 0 {
-                                selected_file_index -= 1;
-                            }
+                            selected_file_index = selected_file_index.saturating_sub(1);
                         }
                         KeyCode::Down => {
                             if selected_file_index < csv_files.len().saturating_sub(1) {
@@ -225,8 +208,8 @@ fn main() -> io::Result<()> {
                             }
                         }
                         KeyCode::Enter => {
-                            if !csv_files.is_empty() {
-                                if let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
+                            if !csv_files.is_empty()
+                                && let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
                                     let deck_name = csv_files[selected_file_index]
                                         .file_stem()
                                         .unwrap()
@@ -262,17 +245,15 @@ fn main() -> io::Result<()> {
                                     });
                                     app_state = AppState::Quiz;
                                 }
-                            }
                         }
                         KeyCode::Esc => break,
                         _ => {}
                     },
                     AppState::Quiz => {
-                        if let Some(session) = &mut quiz_session {
-                            if let Err(e) = handle_quiz_input(session, key.code, &mut app_state) {
+                        if let Some(session) = &mut quiz_session
+                            && let Err(e) = handle_quiz_input(session, key.code, &mut app_state) {
                                 eprintln!("Error writing to quiz file: {}", e);
                             }
-                        }
                     }
                     AppState::QuizQuitConfirm => match key.code {
                         KeyCode::Char('y') => {
@@ -304,11 +285,10 @@ fn main() -> io::Result<()> {
                         }
                         KeyCode::Char('m') => {
                             app_state = AppState::Menu;
-                            if let Some(mut session) = quiz_session.take() {
-                                if let Some(file) = session.output_file.take() {
+                            if let Some(mut session) = quiz_session.take()
+                                && let Some(file) = session.output_file.take() {
                                     drop(file);
                                 }
-                            }
                             quiz_session = None;
                         }
                         KeyCode::Esc => break,
@@ -316,7 +296,6 @@ fn main() -> io::Result<()> {
                     },
                 }
             }
-        }
     }
 
     disable_raw_mode()?;
@@ -330,17 +309,15 @@ fn get_csv_files() -> Vec<PathBuf> {
     let flashcards_dir = PathBuf::from("flashcards");
     let mut files = Vec::new();
 
-    if flashcards_dir.exists() && flashcards_dir.is_dir() {
-        if let Ok(entries) = fs::read_dir(&flashcards_dir) {
+    if flashcards_dir.exists() && flashcards_dir.is_dir()
+        && let Ok(entries) = fs::read_dir(&flashcards_dir) {
             for entry in entries.flatten() {
-                if let Some(ext) = entry.path().extension() {
-                    if ext == "csv" {
+                if let Some(ext) = entry.path().extension()
+                    && ext == "csv" {
                         files.push(entry.path());
                     }
-                }
             }
         }
-    }
 
     files.sort();
     files
@@ -351,15 +328,14 @@ fn load_csv(path: &PathBuf) -> io::Result<Vec<Flashcard>> {
     let mut flashcards = Vec::new();
 
     for line in content.lines() {
-        if let Some((question, answer)) = parse_csv_line(line) {
-            if !question.trim().is_empty() && !answer.trim().is_empty() {
+        if let Some((question, answer)) = parse_csv_line(line)
+            && !question.trim().is_empty() && !answer.trim().is_empty() {
                 flashcards.push(Flashcard {
                     question,
                     answer,
                     user_answer: None,
                 });
             }
-        }
     }
 
     Ok(flashcards)
