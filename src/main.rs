@@ -589,19 +589,19 @@ fn draw_quiz(f: &mut ratatui::Frame, session: &QuizSession) {
     }
     help_text.push(Line::from(vec![
         Span::styled(
+            "↑/↓",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" Navigate  "),
+        Span::styled(
             "Enter",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::from(" Next  "),
-        Span::styled(
-            "↑/↓",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::from(" Previous  "),
         Span::styled(
             "Esc",
             Style::default()
@@ -635,7 +635,7 @@ fn handle_quiz_input(
                 *app_state = AppState::QuizQuitConfirm;
                 Ok(())
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
                     session.showing_answer = false;
@@ -647,7 +647,7 @@ fn handle_quiz_input(
                 }
                 Ok(())
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 if session.current_index > 0 {
                     session.current_index -= 1;
                     session.showing_answer = false;
@@ -701,14 +701,14 @@ fn handle_quiz_input(
                 *app_state = AppState::QuizQuitConfirm;
                 Ok(())
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
                     session.showing_answer = false;
                 }
                 Ok(())
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 if session.current_index > 0 {
                     session.current_index -= 1;
                     session.showing_answer = false;
