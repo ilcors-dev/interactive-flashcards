@@ -529,9 +529,9 @@ fn draw_quiz(f: &mut ratatui::Frame, session: &QuizSession) {
     f.render_widget(question, chunks[1]);
 
     let answer_title = if session.showing_answer {
-        "Answer (Press Enter to continue, Esc to quit)"
+        "Answer"
     } else {
-        "Your Answer (Press Enter to submit, Esc to quit)"
+        "Your Answer"
     };
 
     let answer_content = if session.showing_answer {
