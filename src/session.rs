@@ -1,15 +1,16 @@
 use crate::file_io::{update_progress_header, write_question_entry};
-use crate::models::{AppState, QuizSession};
-use crossterm::event::KeyCode;
+use crate::logger;
+use crate::models::{AiRequest, AiResponse, AppState, QuizSession};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io;
 
 pub fn handle_quiz_input(
     session: &mut QuizSession,
-    key: KeyCode,
+    key: KeyEvent,
     app_state: &mut AppState,
 ) -> io::Result<()> {
     if !session.showing_answer {
-        match key {
+        match key.code {
             KeyCode::Esc => {
                 *app_state = AppState::QuizQuitConfirm;
                 Ok(())
@@ -18,6 +19,7 @@ pub fn handle_quiz_input(
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
                     session.showing_answer = false;
+                    session.last_ai_error = None;
                     session.input_buffer = session.flashcards[session.current_index]
                         .user_answer
                         .as_ref()
@@ -30,6 +32,7 @@ pub fn handle_quiz_input(
                 if session.current_index > 0 {
                     session.current_index -= 1;
                     session.showing_answer = false;
+                    session.last_ai_error = None;
                     session.input_buffer = session.flashcards[session.current_index]
                         .user_answer
                         .as_ref()
@@ -58,11 +61,19 @@ pub fn handle_quiz_input(
                             session.questions_total,
                         )?;
                     }
-                }
 
-                session.input_buffer.clear();
-                session.showing_answer = true;
-                Ok(())
+                    session.last_ai_error = None;
+                    session.input_buffer.clear();
+                    session.showing_answer = true;
+
+                    if session.ai_enabled {
+                        session.request_ai_evaluation(session.current_index);
+                    }
+
+                    Ok(())
+                } else {
+                    Ok(())
+                }
             }
             KeyCode::Backspace => {
                 session.input_buffer.pop();
@@ -75,7 +86,7 @@ pub fn handle_quiz_input(
             _ => Ok(()),
         }
     } else {
-        match key {
+        match key.code {
             KeyCode::Esc => {
                 *app_state = AppState::QuizQuitConfirm;
                 Ok(())
@@ -84,6 +95,7 @@ pub fn handle_quiz_input(
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
                     session.showing_answer = false;
+                    session.last_ai_error = None;
                 }
                 Ok(())
             }
@@ -91,6 +103,7 @@ pub fn handle_quiz_input(
                 if session.current_index > 0 {
                     session.current_index -= 1;
                     session.showing_answer = false;
+                    session.last_ai_error = None;
                 }
                 Ok(())
             }
@@ -98,8 +111,26 @@ pub fn handle_quiz_input(
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
                     session.showing_answer = false;
+                    session.last_ai_error = None;
                 } else {
                     *app_state = AppState::Summary;
+                }
+                Ok(())
+            }
+            KeyCode::Char('e') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && session.ai_enabled {
+                    session.last_ai_error = None;
+                    session.manual_trigger_ai_evaluation();
+                }
+                Ok(())
+            }
+            KeyCode::Char('x') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && session.ai_enabled
+                    && session.ai_evaluation_in_progress
+                {
+                    session.ai_evaluation_in_progress = false;
+                    session.last_ai_error = Some("Evaluation cancelled".to_string());
                 }
                 Ok(())
             }
@@ -108,8 +139,100 @@ pub fn handle_quiz_input(
     }
 }
 
+impl QuizSession {
+    pub fn request_ai_evaluation(&mut self, flashcard_index: usize) {
+        if !self.ai_enabled || self.ai_evaluation_in_progress {
+            return;
+        }
+
+        if let Some(last_idx) = self.ai_last_evaluated_index
+            && last_idx == flashcard_index {
+                return;
+            }
+
+        let flashcard = &self.flashcards[flashcard_index];
+        let user_answer = match &flashcard.user_answer {
+            Some(ans) => ans.clone(),
+            None => return,
+        };
+
+        if user_answer.trim().is_empty() {
+            return;
+        }
+
+        self.last_ai_error = None; // Clear any previous error before starting new evaluation
+        self.ai_evaluation_start_time = Some(std::time::Instant::now()); // Track when evaluation started
+        logger::log(&format!(
+            "Sending AI request for flashcard {}",
+            flashcard_index
+        ));
+
+        if let Some(ref ai_tx) = self.ai_tx {
+            let request = AiRequest::Evaluate {
+                flashcard_index,
+                question: flashcard.question.clone(),
+                correct_answer: flashcard.answer.clone(),
+                user_answer: user_answer.clone(),
+            };
+            ai_tx.send(request).ok();
+            logger::log("AI request sent through channel");
+        }
+
+        self.ai_evaluation_in_progress = true;
+        logger::log("Set ai_evaluation_in_progress = true");
+    }
+
+    pub fn manual_trigger_ai_evaluation(&mut self) {
+        self.ai_evaluation_in_progress = false;
+        if self.ai_enabled {
+            self.request_ai_evaluation(self.current_index);
+        }
+    }
+
+    pub fn process_ai_responses(&mut self, response: AiResponse) {
+        match response {
+            AiResponse::Evaluation {
+                flashcard_index,
+                result,
+            } => {
+                logger::log(&format!(
+                    "Received evaluation for flashcard {}: score {:.2}",
+                    flashcard_index, result.feedback.correctness_score
+                ));
+                self.flashcards[flashcard_index].ai_feedback = Some(result.feedback);
+                self.ai_last_evaluated_index = Some(flashcard_index);
+                self.ai_evaluation_in_progress = false;
+                self.last_ai_error = None; // Clear any previous error so feedback can display
+                logger::log("Set ai_evaluation_in_progress = false (success)");
+            }
+            AiResponse::Error {
+                flashcard_index,
+                error,
+            } => {
+                logger::log(&format!(
+                    "Received error for flashcard {}: {}",
+                    flashcard_index, error
+                ));
+                self.flashcards[flashcard_index].ai_feedback = Some(crate::ai::AIFeedback {
+                    is_correct: false,
+                    correctness_score: 0.0,
+                    corrections: vec![],
+                    explanation: format!("Error: {}", error),
+                    suggestions: vec![],
+                });
+                self.last_ai_error = Some(error);
+                self.ai_evaluation_in_progress = false;
+                logger::log("Set ai_evaluation_in_progress = false (error)");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{AppState, Flashcard, QuizSession};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     #[test]
     fn test_input_buffer_operations() {
         let mut buffer = String::new();
@@ -183,6 +306,21 @@ mod tests {
     }
 
     #[test]
+    fn test_input_buffer_backspace_basic() {
+        let mut buffer = String::from("Hello");
+        buffer.pop();
+        assert_eq!(buffer, "Hell");
+        buffer.pop();
+        assert_eq!(buffer, "Hel");
+        buffer.pop();
+        assert_eq!(buffer, "He");
+        buffer.pop();
+        assert_eq!(buffer, "H");
+        buffer.pop();
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
     fn test_input_buffer_character_addition() {
         let mut buffer = String::new();
         buffer.push('H');
@@ -214,5 +352,232 @@ mod tests {
         assert!(buffer.is_empty());
         buffer.pop();
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_can_type_r_and_c_in_answers() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: String::new(),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Test typing 'r'
+        let r_key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, r_key, app_state);
+        assert_eq!(session.input_buffer, "r");
+
+        // Test typing 'c'
+        let c_key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, c_key, app_state);
+        assert_eq!(session.input_buffer, "rc");
+
+        // Test typing 'R' and 'C'
+        let r_upper = KeyEvent::new(KeyCode::Char('R'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, r_upper, app_state);
+        assert_eq!(session.input_buffer, "rcR");
+
+        let c_upper = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, c_upper, app_state);
+        assert_eq!(session.input_buffer, "rcRC");
+    }
+
+    #[test]
+    fn test_ctrl_e_triggers_ai_evaluation() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: Some("test answer".to_string()),
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: true, // Need to be showing answer for AI commands
+            input_buffer: String::new(),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 1,
+            ai_enabled: true,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: Some("old error".to_string()),
+            ai_tx: Some(tx),
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_e = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_e, app_state);
+
+        // Should trigger evaluation and clear errors
+        assert!(session.ai_evaluation_in_progress);
+        assert!(session.last_ai_error.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_x_cancels_ai_evaluation() {
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: Some("test answer".to_string()),
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: true,
+            input_buffer: String::new(),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 1,
+            ai_enabled: true,
+            ai_evaluation_in_progress: true,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_x = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_x, app_state);
+
+        // Should cancel evaluation and show message
+        assert!(!session.ai_evaluation_in_progress);
+        assert_eq!(
+            session.last_ai_error,
+            Some("Evaluation cancelled".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ctrl_e_x_without_ctrl_modifier_allows_typing() {
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false, // Need to be in input mode
+            input_buffer: String::new(),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: true,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Typing 'e' without Ctrl should add to buffer
+        let e_key = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, e_key, app_state);
+        assert_eq!(session.input_buffer, "e");
+
+        // Typing 'x' without Ctrl should add to buffer
+        let x_key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, x_key, app_state);
+        assert_eq!(session.input_buffer, "ex");
+    }
+
+    #[test]
+    fn test_ai_commands_only_work_when_enabled() {
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: Some("test answer".to_string()),
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: true,
+            input_buffer: String::new(),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 1,
+            ai_enabled: false, // AI disabled
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_e = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_e, app_state);
+
+        // Should not trigger evaluation when AI disabled
+        assert!(!session.ai_evaluation_in_progress);
+    }
+
+    #[test]
+    fn test_ctrl_x_only_works_during_evaluation() {
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: Some("test answer".to_string()),
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: true,
+            input_buffer: String::new(),
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 1,
+            ai_enabled: true,
+            ai_evaluation_in_progress: false, // No evaluation in progress
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_x = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_x, app_state);
+
+        // Should not do anything when no evaluation is in progress
+        assert!(!session.ai_evaluation_in_progress);
+        assert!(session.last_ai_error.is_none());
     }
 }

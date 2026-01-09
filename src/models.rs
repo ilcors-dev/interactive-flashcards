@@ -1,8 +1,11 @@
+use crate::ai::AIFeedback;
+
 #[derive(Debug, Clone)]
 pub struct Flashcard {
     pub question: String,
     pub answer: String,
     pub user_answer: Option<String>,
+    pub ai_feedback: Option<AIFeedback>,
 }
 
 #[derive(Debug)]
@@ -15,6 +18,35 @@ pub struct QuizSession {
     pub output_file: Option<std::fs::File>,
     pub questions_total: usize,
     pub questions_answered: usize,
+    pub ai_enabled: bool,
+    pub ai_evaluation_in_progress: bool,
+    pub ai_last_evaluated_index: Option<usize>,
+    pub ai_evaluation_start_time: Option<std::time::Instant>,
+    pub last_ai_error: Option<String>,
+    pub ai_tx: Option<std::sync::mpsc::Sender<AiRequest>>,
+    pub ai_rx: Option<std::sync::mpsc::Receiver<AiResponse>>,
+}
+
+#[derive(Debug)]
+pub enum AiRequest {
+    Evaluate {
+        flashcard_index: usize,
+        question: String,
+        correct_answer: String,
+        user_answer: String,
+    },
+}
+
+#[derive(Debug)]
+pub enum AiResponse {
+    Evaluation {
+        flashcard_index: usize,
+        result: crate::ai::AIEvaluationResult,
+    },
+    Error {
+        flashcard_index: usize,
+        error: String,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -35,7 +67,9 @@ mod tests {
             question: "Question?".to_string(),
             answer: "Answer".to_string(),
             user_answer: None,
+            ai_feedback: None,
         };
+
         assert_eq!(card.question, "Question?");
         assert_eq!(card.answer, "Answer");
         assert!(card.user_answer.is_none());
@@ -47,6 +81,7 @@ mod tests {
             question: "Question?".to_string(),
             answer: "Answer".to_string(),
             user_answer: Some("My Answer".to_string()),
+            ai_feedback: None,
         };
         assert_eq!(card.question, "Question?");
         assert_eq!(card.answer, "Answer");
@@ -60,6 +95,7 @@ mod tests {
             question: "Q".to_string(),
             answer: "A".to_string(),
             user_answer: Some("UA".to_string()),
+            ai_feedback: None,
         };
         let cloned = card.clone();
         assert_eq!(card.question, cloned.question);
@@ -74,11 +110,13 @@ mod tests {
                 question: "Q1".to_string(),
                 answer: "A1".to_string(),
                 user_answer: None,
+                ai_feedback: None,
             },
             Flashcard {
                 question: "Q2".to_string(),
                 answer: "A2".to_string(),
                 user_answer: None,
+                ai_feedback: None,
             },
         ];
         let session = QuizSession {
@@ -90,6 +128,13 @@ mod tests {
             output_file: None,
             questions_total: cards.len(),
             questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
         };
         assert_eq!(session.flashcards.len(), 2);
         assert_eq!(session.current_index, 0);
@@ -104,6 +149,7 @@ mod tests {
             question: "Q1".to_string(),
             answer: "A1".to_string(),
             user_answer: None,
+            ai_feedback: None,
         }];
         let mut session = QuizSession {
             flashcards: cards.clone(),
@@ -114,6 +160,13 @@ mod tests {
             output_file: None,
             questions_total: cards.len(),
             questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
         };
 
         session.showing_answer = true;
@@ -130,16 +183,19 @@ mod tests {
                 question: "Q1".to_string(),
                 answer: "A1".to_string(),
                 user_answer: None,
+                ai_feedback: None,
             },
             Flashcard {
                 question: "Q2".to_string(),
                 answer: "A2".to_string(),
                 user_answer: None,
+                ai_feedback: None,
             },
             Flashcard {
                 question: "Q3".to_string(),
                 answer: "A3".to_string(),
                 user_answer: None,
+                ai_feedback: None,
             },
         ];
         let mut session = QuizSession {
@@ -151,6 +207,13 @@ mod tests {
             output_file: None,
             questions_total: cards.len(),
             questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
         };
 
         assert_eq!(session.current_index, 0);
@@ -168,18 +231,22 @@ mod tests {
             Flashcard {
                 question: "Q1".to_string(),
                 answer: "A1".to_string(),
-                user_answer: None,
+                user_answer: Some("Answer 1".to_string()),
+                ai_feedback: None,
             },
             Flashcard {
                 question: "Q2".to_string(),
                 answer: "A2".to_string(),
+                user_answer: Some("Answer 2".to_string()),
+                ai_feedback: None,
+            },
+            Flashcard {
+                question: "Q3".to_string(),
+                answer: "A3".to_string(),
                 user_answer: None,
+                ai_feedback: None,
             },
         ];
-
-        cards[0].user_answer = Some("Answer 1".to_string());
-        cards[1].user_answer = Some("Answer 2".to_string());
-
         let session = QuizSession {
             flashcards: cards.clone(),
             current_index: 0,
@@ -189,6 +256,13 @@ mod tests {
             output_file: None,
             questions_total: cards.len(),
             questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
         };
 
         assert_eq!(

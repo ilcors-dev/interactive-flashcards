@@ -7,11 +7,12 @@ use rand::seq::SliceRandom;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::fs;
 use std::io;
+
 use std::time::UNIX_EPOCH;
 
 use interactive_flashcards::{
-    draw_menu, draw_quit_confirmation, draw_quiz, draw_summary, get_csv_files, handle_quiz_input,
-    load_csv, write_session_header, AppState, QuizSession,
+    ai_worker, draw_menu, draw_quit_confirmation, draw_quiz, draw_summary, get_csv_files,
+    handle_quiz_input, load_csv, logger, models, write_session_header, AppState, QuizSession,
 };
 
 fn get_quiz_filename(deck_name: &str) -> String {
@@ -23,6 +24,9 @@ fn get_quiz_filename(deck_name: &str) -> String {
 }
 
 fn main() -> io::Result<()> {
+    logger::init();
+    logger::log("Application started");
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -33,13 +37,45 @@ fn main() -> io::Result<()> {
     let csv_files = get_csv_files();
     let mut selected_file_index: usize = 0;
     let mut quiz_session: Option<QuizSession> = None;
+    let ai_enabled = std::env::var("OPENROUTER_API_KEY").is_ok();
+
+    if ai_enabled {
+        eprintln!("interactive-flashcards: AI evaluation enabled");
+    }
+
+    // Channels will be created when starting a quiz session
 
     loop {
         terminal.draw(|f| match app_state {
-            AppState::Menu => draw_menu(f, &csv_files, selected_file_index),
+            AppState::Menu => draw_menu(f, &csv_files, selected_file_index, ai_enabled),
             AppState::Quiz => {
-                if let Some(session) = &quiz_session {
-                    draw_quiz(f, session);
+                if let Some(session) = &mut quiz_session {
+                    // Check for AI evaluation timeout (30 seconds)
+                    if session.ai_evaluation_in_progress {
+                        if let Some(start_time) = session.ai_evaluation_start_time {
+                            if start_time.elapsed() > std::time::Duration::from_secs(30) {
+                                session.last_ai_error = Some(
+                                    "AI evaluation timed out - press Ctrl+E to retry".to_string(),
+                                );
+                                session.ai_evaluation_in_progress = false;
+                                logger::log("AI evaluation timed out after 30 seconds");
+                            }
+                        }
+                    }
+
+                    // Collect any pending AI responses first
+                    let mut responses = Vec::new();
+                    if let Some(ref ai_rx) = session.ai_rx {
+                        while let Ok(response) = ai_rx.try_recv() {
+                            responses.push(response);
+                        }
+                    }
+                    // Process the collected responses
+                    for response in responses {
+                        session.process_ai_responses(response);
+                    }
+                    // Draw the quiz with current state
+                    draw_quiz(f, session, session.last_ai_error.as_deref());
                 }
             }
             AppState::QuizQuitConfirm => draw_quit_confirmation(f),
@@ -91,6 +127,17 @@ fn main() -> io::Result<()> {
                                         cards.len(),
                                     )?;
 
+                                    // Create channels for this quiz session
+                                    let (request_tx, request_rx) = std::sync::mpsc::channel::<models::AiRequest>();
+                                    let (response_tx, response_rx) = std::sync::mpsc::channel::<models::AiResponse>();
+
+                                    // Spawn AI worker if enabled
+                                    if ai_enabled {
+                                        let request_rx_clone = request_rx;
+                                        let response_tx_clone = response_tx.clone();
+                                        let _ = ai_worker::spawn_ai_worker(response_tx_clone, request_rx_clone);
+                                    }
+
                                     quiz_session = Some(QuizSession {
                                         flashcards: cards.clone(),
                                         current_index: 0,
@@ -100,6 +147,13 @@ fn main() -> io::Result<()> {
                                         output_file: Some(output_file),
                                         questions_total: cards.len(),
                                         questions_answered: 0,
+                                        ai_enabled,
+                                        ai_evaluation_in_progress: false,
+                                        ai_last_evaluated_index: None,
+                                        ai_evaluation_start_time: None,
+                                        ai_tx: if ai_enabled { Some(request_tx) } else { None },
+                                        ai_rx: if ai_enabled { Some(response_rx) } else { None },
+                                        last_ai_error: None,
                                     });
                                     app_state = AppState::Quiz;
                                 }
@@ -109,7 +163,7 @@ fn main() -> io::Result<()> {
                     },
                     AppState::Quiz => {
                         if let Some(session) = &mut quiz_session
-                            && let Err(e) = handle_quiz_input(session, key.code, &mut app_state) {
+                            && let Err(e) = handle_quiz_input(session, key, &mut app_state) {
                                 eprintln!("Error writing to quiz file: {}", e);
                             }
                     }

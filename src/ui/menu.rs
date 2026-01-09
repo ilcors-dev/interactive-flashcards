@@ -7,7 +7,9 @@ use ratatui::{
 };
 use std::path::PathBuf;
 
-pub fn draw_menu(f: &mut Frame, csv_files: &[PathBuf], selected_index: usize) {
+use crate::ai::DEFAULT_MODEL;
+
+pub fn draw_menu(f: &mut Frame, csv_files: &[PathBuf], selected_index: usize, ai_enabled: bool) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -15,10 +17,11 @@ pub fn draw_menu(f: &mut Frame, csv_files: &[PathBuf], selected_index: usize) {
             Constraint::Length(3),
             Constraint::Min(10),
             Constraint::Length(3),
+            Constraint::Length(3),
         ])
         .split(f.area());
 
-    let title = Paragraph::new("📚 Interactive Flashcards")
+    let title = Paragraph::new("Interactive Flashcards")
         .style(
             Style::default()
                 .fg(Color::Cyan)
@@ -53,6 +56,32 @@ pub fn draw_menu(f: &mut Frame, csv_files: &[PathBuf], selected_index: usize) {
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
     f.render_widget(list, chunks[1]);
 
+    let ai_status_content = if ai_enabled {
+        vec![
+            Line::from("AI: Enabled"),
+            Line::from(format!("Model: {}", DEFAULT_MODEL)),
+        ]
+    } else {
+        vec![
+            Line::from("AI: Disabled"),
+            Line::from("Set OPENROUTER_API_KEY to enable"),
+        ]
+    };
+
+    let ai_status = Paragraph::new(ai_status_content)
+        .style(
+            Style::default()
+                .fg(if ai_enabled {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                })
+                .add_modifier(Modifier::BOLD),
+        )
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL).title("AI Status"));
+    f.render_widget(ai_status, chunks[2]);
+
     let help_text = vec![Line::from(vec![
         Span::styled(
             "↑/↓",
@@ -86,5 +115,5 @@ pub fn draw_menu(f: &mut Frame, csv_files: &[PathBuf], selected_index: usize) {
     let help = Paragraph::new(help_text)
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-    f.render_widget(help, chunks[2]);
+    f.render_widget(help, chunks[3]);
 }

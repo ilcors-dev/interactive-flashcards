@@ -7,14 +7,14 @@ use ratatui::{
     Frame,
 };
 
-pub fn draw_quiz(f: &mut Frame, session: &QuizSession) {
+pub fn draw_quiz(f: &mut Frame, session: &QuizSession, ai_error: Option<&str>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
             Constraint::Length(3),
             Constraint::Min(5),
-            Constraint::Min(5),
+            Constraint::Min(10),
             Constraint::Length(3),
         ])
         .split(f.area());
@@ -69,6 +69,53 @@ pub fn draw_quiz(f: &mut Frame, session: &QuizSession) {
             )));
             text.push_line(Line::from(user_answer.as_str()));
         }
+
+        // Add AI feedback, error, or loading in the same area
+        if let Some(feedback) = &flashcard.ai_feedback {
+            text.push_line(Line::from(""));
+            text.push_line(Line::from(Span::styled(
+                "AI Evaluation:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            text.push_line(Line::from(format!(
+                "Score: {:.0}% - {}",
+                feedback.correctness_score * 100.0,
+                if feedback.is_correct {
+                    "Correct"
+                } else if feedback.correctness_score > 0.5 {
+                    "Partially Correct"
+                } else {
+                    "Incorrect"
+                }
+            )));
+
+            if !feedback.corrections.is_empty() {
+                text.push_line(Line::from(""));
+                text.push_line(Line::from("Corrections:"));
+                for correction in &feedback.corrections {
+                    text.push_line(Line::from(format!("• {}", correction)));
+                }
+            }
+
+            text.push_line(Line::from(""));
+            text.push_line(Line::from("Explanation:"));
+            text.push_line(Line::from(feedback.explanation.as_str()));
+
+            if !feedback.suggestions.is_empty() {
+                text.push_line(Line::from(""));
+                text.push_line(Line::from("Suggestions:"));
+                for suggestion in &feedback.suggestions {
+                    text.push_line(Line::from(format!("• {}", suggestion)));
+                }
+            }
+        } else if let Some(error) = ai_error {
+            text.push_line(Line::from(""));
+            text.push_line(Line::from(error));
+        } else if session.ai_enabled && session.ai_evaluation_in_progress {
+            text.push_line(Line::from(""));
+            text.push_line(Line::from("AI is evaluating your answer..."));
+        }
+
         text
     } else {
         Text::from(if session.input_buffer.is_empty() {
@@ -102,6 +149,7 @@ pub fn draw_quiz(f: &mut Frame, session: &QuizSession) {
             Span::from(" Quit to Menu  "),
         ]));
     }
+
     help_text.push(Line::from(vec![
         Span::styled(
             "↑/↓",
@@ -124,6 +172,28 @@ pub fn draw_quiz(f: &mut Frame, session: &QuizSession) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::from(" Quit to Menu  "),
+    ]));
+
+    if session.ai_enabled {
+        help_text.push(Line::from(vec![
+            Span::styled(
+                "Ctrl+E",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::from(" AI Re-evaluate  "),
+            Span::styled(
+                "Ctrl+X",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::from(" AI Cancel  "),
+        ]));
+    }
+
+    help_text.push(Line::from(vec![
         Span::styled(
             "Ctrl+C",
             Style::default()
