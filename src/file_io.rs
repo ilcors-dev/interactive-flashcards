@@ -2,6 +2,10 @@ use std::fs;
 use std::io::{self, Seek, SeekFrom, Write};
 use std::time::UNIX_EPOCH;
 
+use serde_json;
+
+use crate::ai::AIFeedback;
+
 fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     let mut result = Vec::new();
     let mut current_line = String::new();
@@ -85,6 +89,7 @@ pub fn write_question_entry(
     question: &str,
     user_answer: &Option<String>,
     correct_answer: &str,
+    ai_feedback: Option<&AIFeedback>,
 ) -> io::Result<()> {
     let user_ans_text = user_answer
         .as_ref()
@@ -109,6 +114,16 @@ pub fn write_question_entry(
     }
     writeln!(file)?;
 
+    if let Some(feedback) = ai_feedback {
+        writeln!(file, "AI FEEDBACK:")?;
+        let json = serde_json::to_string_pretty(feedback)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        for line in json.lines() {
+            writeln!(file, "{}", line)?;
+        }
+        writeln!(file)?;
+    }
+
     writeln!(
         file,
         "-----------------------------------------------------------------------"
@@ -120,6 +135,8 @@ pub fn write_question_entry(
 
 #[cfg(test)]
 mod tests {
+    use super::{write_question_entry, AIFeedback};
+
     #[test]
     fn test_input_buffer_operations() {
         let mut buffer = String::new();
@@ -224,5 +241,85 @@ mod tests {
         assert!(buffer.is_empty());
         buffer.pop();
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_write_question_entry_with_ai_feedback() {
+        use std::fs::File;
+        use std::io::Read;
+
+        let temp_path = std::env::temp_dir().join("test_ai_feedback.txt");
+        let mut file = File::create(&temp_path).unwrap();
+
+        let ai_feedback = AIFeedback {
+            is_correct: false,
+            correctness_score: 0.75,
+            corrections: vec!["Missed key point".to_string()],
+            explanation: "Your answer was close but missed the main concept.".to_string(),
+            suggestions: vec!["Review chapter 5".to_string()],
+        };
+
+        write_question_entry(
+            &mut file,
+            1,
+            "What is the capital of France?",
+            &Some("Paris is the capital".to_string()),
+            "Paris",
+            Some(&ai_feedback),
+        )
+        .unwrap();
+
+        let mut content = String::new();
+        File::open(&temp_path)
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
+        std::fs::remove_file(temp_path).unwrap();
+
+        assert!(content.contains("QUESTION 1:"));
+        assert!(content.contains("YOUR ANSWER:"));
+        assert!(content.contains("Paris is the capital"));
+        assert!(content.contains("CORRECT ANSWER:"));
+        assert!(content.contains("Paris"));
+        assert!(content.contains("AI FEEDBACK:"));
+        assert!(content.contains("\"is_correct\": false"));
+        assert!(content.contains("\"correctness_score\": 0.75"));
+        assert!(content
+            .contains("\"explanation\": \"Your answer was close but missed the main concept.\""));
+        assert!(content.contains("\"corrections\": [\n    \"Missed key point\"\n  ]"));
+        assert!(content.contains("\"suggestions\": [\n    \"Review chapter 5\"\n  ]"));
+    }
+
+    #[test]
+    fn test_write_question_entry_without_ai_feedback() {
+        use std::fs::File;
+        use std::io::Read;
+
+        let temp_path = std::env::temp_dir().join("test_no_ai_feedback.txt");
+        let mut file = File::create(&temp_path).unwrap();
+
+        write_question_entry(
+            &mut file,
+            2,
+            "What is 2+2?",
+            &Some("4".to_string()),
+            "4",
+            None,
+        )
+        .unwrap();
+
+        let mut content = String::new();
+        File::open(&temp_path)
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
+        std::fs::remove_file(temp_path).unwrap();
+
+        assert!(content.contains("QUESTION 2:"));
+        assert!(content.contains("YOUR ANSWER:"));
+        assert!(content.contains("4"));
+        assert!(content.contains("CORRECT ANSWER:"));
+        assert!(content.contains("4"));
+        assert!(!content.contains("AI FEEDBACK:"));
     }
 }

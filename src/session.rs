@@ -25,6 +25,7 @@ pub fn handle_quiz_input(
                         .as_ref()
                         .unwrap_or(&String::new())
                         .clone();
+                    session.cursor_position = session.input_buffer.len();
                 }
                 Ok(())
             }
@@ -38,6 +39,7 @@ pub fn handle_quiz_input(
                         .as_ref()
                         .unwrap_or(&String::new())
                         .clone();
+                    session.cursor_position = session.input_buffer.len();
                 }
                 Ok(())
             }
@@ -54,7 +56,16 @@ pub fn handle_quiz_input(
                         let user_ans = &session.flashcards[session.current_index].user_answer;
                         let correct_ans = &session.flashcards[session.current_index].answer;
 
-                        write_question_entry(file, q_num, question, user_ans, correct_ans)?;
+                        write_question_entry(
+                            file,
+                            q_num,
+                            question,
+                            user_ans,
+                            correct_ans,
+                            session.flashcards[session.current_index]
+                                .ai_feedback
+                                .as_ref(),
+                        )?;
                         update_progress_header(
                             file,
                             session.questions_answered,
@@ -64,6 +75,7 @@ pub fn handle_quiz_input(
 
                     session.last_ai_error = None;
                     session.input_buffer.clear();
+                    session.cursor_position = 0;
                     session.showing_answer = true;
 
                     if session.ai_enabled {
@@ -75,12 +87,30 @@ pub fn handle_quiz_input(
                     Ok(())
                 }
             }
+            KeyCode::Left => {
+                if session.cursor_position > 0 {
+                    session.cursor_position -= 1;
+                }
+                // Ensure cursor doesn't go beyond buffer bounds
+                session.cursor_position = session.cursor_position.min(session.input_buffer.len());
+                Ok(())
+            }
+            KeyCode::Right => {
+                if session.cursor_position < session.input_buffer.len() {
+                    session.cursor_position += 1;
+                }
+                Ok(())
+            }
             KeyCode::Backspace => {
-                session.input_buffer.pop();
+                if session.cursor_position > 0 {
+                    session.input_buffer.remove(session.cursor_position - 1);
+                    session.cursor_position -= 1;
+                }
                 Ok(())
             }
             KeyCode::Char(c) => {
-                session.input_buffer.push(c);
+                session.input_buffer.insert(session.cursor_position, c);
+                session.cursor_position += 1;
                 Ok(())
             }
             _ => Ok(()),
@@ -370,6 +400,7 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: false,
             input_buffer: String::new(),
+            cursor_position: 0,
             output_file: None,
             questions_total: 1,
             questions_answered: 0,
@@ -419,6 +450,7 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: true, // Need to be showing answer for AI commands
             input_buffer: String::new(),
+            cursor_position: 0,
             output_file: None,
             questions_total: 1,
             questions_answered: 1,
@@ -453,6 +485,7 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: true,
             input_buffer: String::new(),
+            cursor_position: 0,
             output_file: None,
             questions_total: 1,
             questions_answered: 1,
@@ -488,8 +521,9 @@ mod tests {
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
-            showing_answer: false, // Need to be in input mode
+            showing_answer: false, // Need to be in input mode for typing
             input_buffer: String::new(),
+            cursor_position: 0,
             output_file: None,
             questions_total: 1,
             questions_answered: 0,
@@ -527,6 +561,7 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: true,
             input_buffer: String::new(),
+            cursor_position: 0,
             output_file: None,
             questions_total: 1,
             questions_answered: 1,
@@ -560,6 +595,7 @@ mod tests {
             deck_name: "Test".to_string(),
             showing_answer: true,
             input_buffer: String::new(),
+            cursor_position: 0,
             output_file: None,
             questions_total: 1,
             questions_answered: 1,
@@ -579,5 +615,273 @@ mod tests {
         // Should not do anything when no evaluation is in progress
         assert!(!session.ai_evaluation_in_progress);
         assert!(session.last_ai_error.is_none());
+    }
+
+    #[test]
+    fn test_cursor_left_right_movement() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false, // Need to be in input mode
+            input_buffer: "Hello".to_string(),
+            cursor_position: 5, // Start at end of "Hello"
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Test moving cursor left
+        let left_key = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, left_key, app_state);
+        assert_eq!(session.cursor_position, 4);
+
+        let _ = handle_quiz_input(&mut session, left_key, app_state);
+        assert_eq!(session.cursor_position, 3);
+
+        // Test moving cursor right
+        let right_key = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, right_key, app_state);
+        assert_eq!(session.cursor_position, 4);
+
+        // Test bounds: can't go left of position 0
+        for _ in 0..10 {
+            let _ = handle_quiz_input(&mut session, left_key, app_state);
+        }
+        assert_eq!(session.cursor_position, 0);
+
+        // Test bounds: can't go right past string length
+        for _ in 0..10 {
+            let _ = handle_quiz_input(&mut session, right_key, app_state);
+        }
+        assert_eq!(session.cursor_position, 5); // Length of "Hello"
+    }
+
+    #[test]
+    fn test_insert_character_at_cursor_position() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: "Helo".to_string(),
+            cursor_position: 3, // Between 'e' and 'o'
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Insert 'l' at position 3 (between 'e' and 'o')
+        let l_key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, l_key, app_state);
+
+        assert_eq!(session.input_buffer, "Hello");
+        assert_eq!(session.cursor_position, 4); // Cursor should advance
+
+        // Move cursor to beginning and insert
+        session.cursor_position = 0;
+        let w_key = KeyEvent::new(KeyCode::Char('W'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, w_key, app_state);
+
+        assert_eq!(session.input_buffer, "WHello");
+        assert_eq!(session.cursor_position, 1);
+    }
+
+    #[test]
+    fn test_backspace_deletes_at_cursor_position() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: "Hello World".to_string(),
+            cursor_position: 5, // At space between "Hello" and "World"
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Backspace should delete the character before cursor ('o')
+        let backspace_key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, backspace_key, app_state);
+
+        assert_eq!(session.input_buffer, "Hell World");
+        assert_eq!(session.cursor_position, 4); // Cursor should move left
+
+        // Move cursor to end and backspace
+        session.cursor_position = session.input_buffer.len();
+        let _ = handle_quiz_input(&mut session, backspace_key, app_state);
+
+        assert_eq!(session.input_buffer, "Hell Worl");
+        assert_eq!(session.cursor_position, 9);
+
+        // Test backspace at position 0 (should do nothing)
+        session.cursor_position = 0;
+        let original_buffer = session.input_buffer.clone();
+        let _ = handle_quiz_input(&mut session, backspace_key, app_state);
+
+        assert_eq!(session.input_buffer, original_buffer);
+        assert_eq!(session.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_cursor_position_on_question_navigation() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![
+                Flashcard {
+                    question: "Q1?".to_string(),
+                    answer: "A1".to_string(),
+                    user_answer: Some("Answer1".to_string()),
+                    ai_feedback: None,
+                },
+                Flashcard {
+                    question: "Q2?".to_string(),
+                    answer: "A2".to_string(),
+                    user_answer: Some("Answer2".to_string()),
+                    ai_feedback: None,
+                },
+            ],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            output_file: None,
+            questions_total: 2,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Navigate to next question (Down arrow)
+        let down_key = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, down_key, app_state);
+
+        assert_eq!(session.current_index, 1);
+        assert_eq!(session.input_buffer, "Answer2");
+        assert_eq!(session.cursor_position, 7); // Length of "Answer2"
+
+        // Navigate back (Up arrow)
+        let up_key = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, up_key, app_state);
+
+        assert_eq!(session.current_index, 0);
+        assert_eq!(session.input_buffer, "Answer1");
+        assert_eq!(session.cursor_position, 7); // Length of "Answer1"
+    }
+
+    #[test]
+    fn test_cursor_edge_cases() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Test with empty buffer: left/right arrows should do nothing
+        let left_key = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
+        let right_key = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+
+        let _ = handle_quiz_input(&mut session, left_key, app_state);
+        assert_eq!(session.cursor_position, 0);
+
+        let _ = handle_quiz_input(&mut session, right_key, app_state);
+        assert_eq!(session.cursor_position, 0);
+
+        // Add some text and test bounds
+        let h_key = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, h_key, app_state);
+        assert_eq!(session.input_buffer, "H");
+        assert_eq!(session.cursor_position, 1);
+
+        // Cursor should be constrained to valid range
+        session.cursor_position = 10; // Invalid position
+        let _ = handle_quiz_input(&mut session, left_key, app_state);
+        assert_eq!(session.cursor_position, 1); // Should be at valid max (length)
+
+        // Test backspace on single character
+        let backspace_key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, backspace_key, app_state);
+        assert_eq!(session.input_buffer, "");
+        assert_eq!(session.cursor_position, 0);
     }
 }
