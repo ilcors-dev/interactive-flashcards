@@ -130,6 +130,16 @@ pub fn draw_quiz(f: &mut Frame, session: &QuizSession, ai_error: Option<&str>) {
         .block(Block::default().borders(Borders::ALL).title(answer_title));
     f.render_widget(answer, chunks[2]);
 
+    // Set cursor position when typing an answer
+    if !session.showing_answer {
+        // Position cursor based on cursor_position within the input buffer
+        // For single-line input, we position it relative to the start of the text
+        let cursor_x =
+            chunks[2].x + 1 + session.cursor_position.min(session.input_buffer.len()) as u16;
+        let cursor_y = chunks[2].y + 1; // Position in the first line of the input area
+        f.set_cursor_position((cursor_x, cursor_y));
+    }
+
     let mut help_text = Vec::new();
     if !session.showing_answer {
         help_text.push(Line::from(vec![

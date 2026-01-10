@@ -51,17 +51,15 @@ fn main() -> io::Result<()> {
             AppState::Quiz => {
                 if let Some(session) = &mut quiz_session {
                     // Check for AI evaluation timeout (30 seconds)
-                    if session.ai_evaluation_in_progress {
-                        if let Some(start_time) = session.ai_evaluation_start_time {
-                            if start_time.elapsed() > std::time::Duration::from_secs(30) {
+                    if session.ai_evaluation_in_progress
+                        && let Some(start_time) = session.ai_evaluation_start_time
+                            && start_time.elapsed() > std::time::Duration::from_secs(30) {
                                 session.last_ai_error = Some(
                                     "AI evaluation timed out - press Ctrl+E to retry".to_string(),
                                 );
                                 session.ai_evaluation_in_progress = false;
                                 logger::log("AI evaluation timed out after 30 seconds");
                             }
-                        }
-                    }
 
                     // Collect any pending AI responses first
                     let mut responses = Vec::new();
@@ -144,6 +142,7 @@ fn main() -> io::Result<()> {
                                         deck_name,
                                         showing_answer: false,
                                         input_buffer: String::new(),
+                                        cursor_position: 0,
                                         output_file: Some(output_file),
                                         questions_total: cards.len(),
                                         questions_answered: 0,
@@ -192,6 +191,7 @@ fn main() -> io::Result<()> {
                                 session.current_index = 0;
                                 session.showing_answer = false;
                                 session.input_buffer = String::new();
+                                session.cursor_position = 0;
                                 app_state = AppState::Quiz;
                             }
                         }
