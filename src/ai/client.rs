@@ -1,9 +1,13 @@
-use openrouter_api::types::chat::{ChatCompletionRequest, Message};
+use openrouter_api::{
+    models::provider_preferences::ProviderPreferences,
+    models::provider_preferences::ProviderSort,
+    types::chat::{ChatCompletionRequest, Message},
+};
 use serde::Serialize;
 
-pub const DEFAULT_MODEL: &str = "xiaomi/mimo-v2-flash:free";
+pub const DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 pub const DEFAULT_TEMPERATURE: f32 = 0.3;
-pub const DEFAULT_MAX_TOKENS: u32 = 512;
+pub const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 #[derive(Debug)]
 pub struct OpenRouterClient {
@@ -46,7 +50,7 @@ IMPORTANT: Respond ONLY with this exact JSON structure (no markdown, no extra te
     "is_correct": boolean,
     "correctness_score": float between 0.0 and 1.0,
     "corrections": ["correction1", "correction2"],
-    "explanation": "detailed explanation",
+    "explanation": "detailed explanation. must contain also deep dives on the topic regardless of correctness",
     "suggestions": ["suggestion1", "suggestion2"]
 }}"#,
             question, correct_answer, user_answer
@@ -64,14 +68,16 @@ IMPORTANT: Respond ONLY with this exact JSON structure (no markdown, no extra te
             Message::text("user", &prompt),
         ];
 
+        let provider = ProviderPreferences::new().with_sort(ProviderSort::Throughput);
+
         let request = ChatCompletionRequest {
             model,
             messages,
+            provider: Some(provider),
             stream: None,
             response_format: None,
             tools: None,
             tool_choice: None,
-            provider: None,
             models: None,
             transforms: None,
             route: None,
