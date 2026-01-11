@@ -40,7 +40,7 @@ pub fn write_session_header(
     file: &mut fs::File,
     deck_name: &str,
     total_questions: usize,
-) -> io::Result<()> {
+) -> io::Result<u64> {
     let timestamp = std::time::SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -57,6 +57,7 @@ pub fn write_session_header(
         "======================================================================"
     )?;
     writeln!(file)?;
+    let progress_pos = file.stream_position()?;
     writeln!(file, "Progress: 0/{} questions answered", total_questions)?;
     writeln!(
         file,
@@ -64,16 +65,16 @@ pub fn write_session_header(
     )?;
     writeln!(file)?;
 
-    Ok(())
+    Ok(progress_pos)
 }
 
 pub fn update_progress_header(
     file: &mut fs::File,
+    progress_pos: u64,
     answered: usize,
     total: usize,
 ) -> io::Result<()> {
-    let current_pos = file.stream_position()?;
-    file.seek(SeekFrom::Start(current_pos.saturating_sub(100)))?;
+    file.seek(SeekFrom::Start(progress_pos))?;
     writeln!(file, "Progress: {}/{} questions answered", answered, total)?;
     writeln!(
         file,
@@ -321,5 +322,71 @@ mod tests {
         assert!(content.contains("CORRECT ANSWER:"));
         assert!(content.contains("4"));
         assert!(!content.contains("AI FEEDBACK:"));
+    }
+
+    #[test]
+    fn test_progress_header_update_with_ai_feedback() {
+        use crate::AIFeedback;
+        use std::fs::File;
+        use std::io::Read;
+
+        let temp_path = std::env::temp_dir().join("test_progress_update.txt");
+        let mut file = File::create(&temp_path).unwrap();
+
+        // Write session header and get progress position
+        let progress_pos = crate::write_session_header(&mut file, "Test Deck", 3).unwrap();
+
+        // Write a question entry with AI feedback (simulating the scenario)
+        let ai_feedback = AIFeedback {
+            is_correct: false,
+            correctness_score: 0.75,
+            corrections: vec!["Missed key point".to_string()],
+            explanation: "Your answer was close but missed the main concept. This is a very long explanation that should test whether the progress header update corrupts the AI feedback JSON when it grows large. The explanation continues here to make sure we have enough content to test the seeking logic properly.".to_string(),
+            suggestions: vec!["Review chapter 5".to_string(), "Practice more examples".to_string()],
+        };
+
+        write_question_entry(
+            &mut file,
+            1,
+            "What is the hidden node problem?",
+            &Some("It's when nodes can't see each other".to_string()),
+            "Hidden node problem occurs when two nodes are out of range of each other but both can communicate with a third node, causing collisions.",
+            Some(&ai_feedback),
+        ).unwrap();
+
+        // Update progress header (this should not corrupt the AI feedback)
+        crate::update_progress_header(&mut file, progress_pos, 1, 3).unwrap();
+
+        // Write another question to ensure file continues working
+        write_question_entry(
+            &mut file,
+            2,
+            "What is RTS/CTS?",
+            &Some("Request to Send/Clear to Send".to_string()),
+            "RTS/CTS is a handshaking protocol used to solve the hidden node problem in wireless networks.",
+            None,
+        ).unwrap();
+
+        // Read the entire file
+        let mut content = String::new();
+        File::open(&temp_path)
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
+        std::fs::remove_file(temp_path).unwrap();
+
+        // Verify progress header was updated correctly
+        assert!(content.contains("Progress: 1/3 questions answered"));
+
+        // Verify AI feedback JSON is intact and not corrupted
+        assert!(content.contains("\"is_correct\": false"));
+        assert!(content.contains("\"correctness_score\": 0.75"));
+        assert!(content.contains("Your answer was close but missed the main concept"));
+        assert!(content.contains("Practice more examples"));
+        assert!(content.contains("hidden node problem"));
+        assert!(content.contains("RTS/CTS"));
+
+        // Ensure no corruption from progress update
+        assert!(!content.contains("Progress: 1/3 questions answeredYour answer was close"));
     }
 }

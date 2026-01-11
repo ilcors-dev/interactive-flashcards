@@ -119,13 +119,13 @@ fn main() -> io::Result<()> {
                                         }
                                     };
 
-                                    write_session_header(
-                                        &mut output_file,
-                                        &deck_name,
-                                        cards.len(),
-                                    )?;
+                                     let progress_header_position = write_session_header(
+                                         &mut output_file,
+                                         &deck_name,
+                                         cards.len(),
+                                     )?;
 
-                                    // Create channels for this quiz session
+                                     // Create channels for this quiz session
                                     let (request_tx, request_rx) = std::sync::mpsc::channel::<models::AiRequest>();
                                     let (response_tx, response_rx) = std::sync::mpsc::channel::<models::AiResponse>();
 
@@ -150,10 +150,11 @@ fn main() -> io::Result<()> {
                                         ai_evaluation_in_progress: false,
                                         ai_last_evaluated_index: None,
                                         ai_evaluation_start_time: None,
-                                        ai_tx: if ai_enabled { Some(request_tx) } else { None },
-                                        ai_rx: if ai_enabled { Some(response_rx) } else { None },
-                                        last_ai_error: None,
-                                    });
+                                         ai_tx: if ai_enabled { Some(request_tx) } else { None },
+                                         ai_rx: if ai_enabled { Some(response_rx) } else { None },
+                                         last_ai_error: None,
+                                         progress_header_position,
+                                     });
                                     app_state = AppState::Quiz;
                                 }
                         }

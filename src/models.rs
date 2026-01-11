@@ -6,6 +6,7 @@ pub struct Flashcard {
     pub answer: String,
     pub user_answer: Option<String>,
     pub ai_feedback: Option<AIFeedback>,
+    pub written_to_file: bool,
 }
 
 #[derive(Debug)]
@@ -26,6 +27,7 @@ pub struct QuizSession {
     pub last_ai_error: Option<String>,
     pub ai_tx: Option<std::sync::mpsc::Sender<AiRequest>>,
     pub ai_rx: Option<std::sync::mpsc::Receiver<AiResponse>>,
+    pub progress_header_position: u64,
 }
 
 #[derive(Debug)]
@@ -69,6 +71,7 @@ mod tests {
             answer: "Answer".to_string(),
             user_answer: None,
             ai_feedback: None,
+            written_to_file: false,
         };
 
         assert_eq!(card.question, "Question?");
@@ -83,6 +86,7 @@ mod tests {
             answer: "Answer".to_string(),
             user_answer: Some("My Answer".to_string()),
             ai_feedback: None,
+            written_to_file: false,
         };
         assert_eq!(card.question, "Question?");
         assert_eq!(card.answer, "Answer");
@@ -97,6 +101,7 @@ mod tests {
             answer: "A".to_string(),
             user_answer: Some("UA".to_string()),
             ai_feedback: None,
+            written_to_file: false,
         };
         let cloned = card.clone();
         assert_eq!(card.question, cloned.question);
@@ -112,12 +117,14 @@ mod tests {
                 answer: "A1".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             },
             Flashcard {
                 question: "Q2".to_string(),
                 answer: "A2".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             },
         ];
         let session = QuizSession {
@@ -137,6 +144,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
         assert_eq!(session.flashcards.len(), 2);
         assert_eq!(session.current_index, 0);
@@ -152,6 +160,7 @@ mod tests {
             answer: "A1".to_string(),
             user_answer: None,
             ai_feedback: None,
+            written_to_file: false,
         }];
         let mut session = QuizSession {
             flashcards: cards.clone(),
@@ -170,6 +179,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
 
         session.showing_answer = true;
@@ -187,18 +197,21 @@ mod tests {
                 answer: "A1".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             },
             Flashcard {
                 question: "Q2".to_string(),
                 answer: "A2".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             },
             Flashcard {
                 question: "Q3".to_string(),
                 answer: "A3".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             },
         ];
         let mut session = QuizSession {
@@ -218,6 +231,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
 
         assert_eq!(session.current_index, 0);
@@ -237,18 +251,21 @@ mod tests {
                 answer: "A1".to_string(),
                 user_answer: Some("Answer 1".to_string()),
                 ai_feedback: None,
+                written_to_file: false,
             },
             Flashcard {
                 question: "Q2".to_string(),
                 answer: "A2".to_string(),
                 user_answer: Some("Answer 2".to_string()),
                 ai_feedback: None,
+                written_to_file: false,
             },
             Flashcard {
                 question: "Q3".to_string(),
                 answer: "A3".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             },
         ];
         let session = QuizSession {
@@ -268,6 +285,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
 
         assert_eq!(

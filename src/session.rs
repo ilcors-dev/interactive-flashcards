@@ -47,27 +47,32 @@ pub fn handle_quiz_input(
                 if !session.input_buffer.trim().is_empty() {
                     session.flashcards[session.current_index].user_answer =
                         Some(session.input_buffer.clone());
+                    session.flashcards[session.current_index].written_to_file = false;
 
                     session.questions_answered += 1;
 
                     if let Some(ref mut file) = session.output_file {
-                        let q_num = session.current_index + 1;
-                        let question = &session.flashcards[session.current_index].question;
-                        let user_ans = &session.flashcards[session.current_index].user_answer;
-                        let correct_ans = &session.flashcards[session.current_index].answer;
+                        if !session.ai_enabled {
+                            let q_num = session.current_index + 1;
+                            let question = &session.flashcards[session.current_index].question;
+                            let user_ans = &session.flashcards[session.current_index].user_answer;
+                            let correct_ans = &session.flashcards[session.current_index].answer;
 
-                        write_question_entry(
-                            file,
-                            q_num,
-                            question,
-                            user_ans,
-                            correct_ans,
-                            session.flashcards[session.current_index]
-                                .ai_feedback
-                                .as_ref(),
-                        )?;
+                            write_question_entry(
+                                file,
+                                q_num,
+                                question,
+                                user_ans,
+                                correct_ans,
+                                session.flashcards[session.current_index]
+                                    .ai_feedback
+                                    .as_ref(),
+                            )?;
+                            session.flashcards[session.current_index].written_to_file = true;
+                        }
                         update_progress_header(
                             file,
+                            session.progress_header_position,
                             session.questions_answered,
                             session.questions_total,
                         )?;
@@ -220,7 +225,7 @@ impl QuizSession {
     }
 
     pub fn process_ai_responses(&mut self, response: AiResponse) {
-        match response {
+        let (flashcard_index, feedback) = match response {
             AiResponse::Evaluation {
                 flashcard_index,
                 result,
@@ -229,11 +234,11 @@ impl QuizSession {
                     "Received evaluation for flashcard {}: score {:.2}",
                     flashcard_index, result.feedback.correctness_score
                 ));
-                self.flashcards[flashcard_index].ai_feedback = Some(result.feedback);
                 self.ai_last_evaluated_index = Some(flashcard_index);
                 self.ai_evaluation_in_progress = false;
                 self.last_ai_error = None; // Clear any previous error so feedback can display
                 logger::log("Set ai_evaluation_in_progress = false (success)");
+                (flashcard_index, Some(result.feedback))
             }
             AiResponse::Error {
                 flashcard_index,
@@ -243,18 +248,46 @@ impl QuizSession {
                     "Received error for flashcard {}: {}",
                     flashcard_index, error
                 ));
-                self.flashcards[flashcard_index].ai_feedback = Some(crate::ai::AIFeedback {
-                    is_correct: false,
-                    correctness_score: 0.0,
-                    corrections: vec![],
-                    explanation: format!("Error: {}", error),
-                    suggestions: vec![],
-                });
-                self.last_ai_error = Some(error);
                 self.ai_evaluation_in_progress = false;
+                self.last_ai_error = Some(error.clone());
                 logger::log("Set ai_evaluation_in_progress = false (error)");
+                (
+                    flashcard_index,
+                    Some(crate::ai::AIFeedback {
+                        is_correct: false,
+                        correctness_score: 0.0,
+                        corrections: vec![],
+                        explanation: format!("Error: {}", error),
+                        suggestions: vec![],
+                    }),
+                )
             }
-        }
+        };
+        self.flashcards[flashcard_index].ai_feedback = feedback;
+
+        if !self.flashcards[flashcard_index].written_to_file
+            && let Some(ref mut file) = self.output_file {
+                let q_num = flashcard_index + 1;
+                let question = &self.flashcards[flashcard_index].question;
+                let user_ans = &self.flashcards[flashcard_index].user_answer;
+                let correct_ans = &self.flashcards[flashcard_index].answer;
+
+                write_question_entry(
+                    file,
+                    q_num,
+                    question,
+                    user_ans,
+                    correct_ans,
+                    self.flashcards[flashcard_index].ai_feedback.as_ref(),
+                ).ok();
+                update_progress_header(
+                    file,
+                    self.progress_header_position,
+                    self.questions_answered,
+                    self.questions_total,
+                ).ok();
+                self.flashcards[flashcard_index].written_to_file = true;
+            }
     }
 }
 
@@ -395,6 +428,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -411,6 +445,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -445,6 +480,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -458,9 +494,10 @@ mod tests {
             ai_evaluation_in_progress: false,
             ai_last_evaluated_index: None,
             ai_evaluation_start_time: None,
-            last_ai_error: Some("old error".to_string()),
+            last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -480,6 +517,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -496,6 +534,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -518,6 +557,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -534,6 +574,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -556,6 +597,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -572,6 +614,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -590,6 +633,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -606,6 +650,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -628,6 +673,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -644,6 +690,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -684,6 +731,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -700,6 +748,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -730,6 +779,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -746,6 +796,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -784,12 +835,14 @@ mod tests {
                     answer: "A1".to_string(),
                     user_answer: Some("Answer1".to_string()),
                     ai_feedback: None,
+                    written_to_file: false,
                 },
                 Flashcard {
                     question: "Q2?".to_string(),
                     answer: "A2".to_string(),
                     user_answer: Some("Answer2".to_string()),
                     ai_feedback: None,
+                    written_to_file: false,
                 },
             ],
             current_index: 0,
@@ -807,6 +860,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -838,6 +892,7 @@ mod tests {
                 answer: "Answer".to_string(),
                 user_answer: None,
                 ai_feedback: None,
+                written_to_file: false,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -854,6 +909,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
+            progress_header_position: 0,
         };
         let app_state = &mut AppState::Quiz;
 
