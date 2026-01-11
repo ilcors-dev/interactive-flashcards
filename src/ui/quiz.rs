@@ -132,11 +132,15 @@ pub fn draw_quiz(f: &mut Frame, session: &QuizSession, ai_error: Option<&str>) {
 
     // Set cursor position when typing an answer
     if !session.showing_answer {
-        // Position cursor based on cursor_position within the input buffer
-        // For single-line input, we position it relative to the start of the text
-        let cursor_x =
-            chunks[2].x + 1 + session.cursor_position.min(session.input_buffer.len()) as u16;
-        let cursor_y = chunks[2].y + 1; // Position in the first line of the input area
+        // Calculate cursor position accounting for text wrapping
+        let text_width = (chunks[2].width - 2) as usize; // Account for borders
+        let (cursor_line, cursor_col) = crate::calculate_wrapped_cursor_position(
+            &session.input_buffer,
+            session.cursor_position,
+            text_width,
+        );
+        let cursor_x = chunks[2].x + 1 + cursor_col as u16;
+        let cursor_y = chunks[2].y + 1 + cursor_line as u16;
         f.set_cursor_position((cursor_x, cursor_y));
     }
 

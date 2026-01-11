@@ -17,3 +17,4 @@ pub use file_io::{update_progress_header, write_question_entry, write_session_he
 pub use models::{AppState, Flashcard, QuizSession};
 pub use session::handle_quiz_input;
 pub use ui::{draw_menu, draw_quit_confirmation, draw_quiz, draw_summary};
+pub use utils::calculate_wrapped_cursor_position;
