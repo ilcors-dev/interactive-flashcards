@@ -26,6 +26,7 @@ pub fn handle_quiz_input(
                         .unwrap_or(&String::new())
                         .clone();
                     session.cursor_position = session.input_buffer.len();
+                    session.input_scroll_y = 0; // Reset scroll on question navigation
                 }
                 Ok(())
             }
@@ -446,6 +447,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -498,6 +500,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -535,6 +538,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -575,6 +579,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -615,6 +620,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -651,6 +657,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -691,6 +698,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -749,6 +757,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -797,6 +806,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -861,6 +871,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -910,6 +921,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 

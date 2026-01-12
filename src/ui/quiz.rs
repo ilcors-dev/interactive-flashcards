@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn draw_quiz(f: &mut Frame, session: &QuizSession, ai_error: Option<&str>) {
+pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -125,8 +125,32 @@ pub fn draw_quiz(f: &mut Frame, session: &QuizSession, ai_error: Option<&str>) {
         })
     };
 
+    // Calculate scroll position for input mode to keep cursor visible
+    let scroll_y = if !session.showing_answer {
+        let visible_height = (chunks[2].height - 2) as usize; // Account for borders
+        let text_width = (chunks[2].width - 2) as usize;
+        let (cursor_line, _) = crate::calculate_wrapped_cursor_position(
+            &session.input_buffer,
+            session.cursor_position,
+            text_width,
+        );
+
+        // Adjust scroll to keep cursor visible
+        let mut new_scroll = session.input_scroll_y as usize;
+        if cursor_line < new_scroll {
+            new_scroll = cursor_line;
+        } else if cursor_line >= new_scroll + visible_height {
+            new_scroll = cursor_line - visible_height + 1;
+        }
+        session.input_scroll_y = new_scroll as u16;
+        new_scroll as u16
+    } else {
+        0
+    };
+
     let answer = Paragraph::new(answer_content)
         .wrap(Wrap { trim: true })
+        .scroll((scroll_y, 0))
         .block(Block::default().borders(Borders::ALL).title(answer_title));
     f.render_widget(answer, chunks[2]);
 
@@ -140,7 +164,7 @@ pub fn draw_quiz(f: &mut Frame, session: &QuizSession, ai_error: Option<&str>) {
             text_width,
         );
         let cursor_x = chunks[2].x + 1 + cursor_col as u16;
-        let cursor_y = chunks[2].y + 1 + cursor_line as u16;
+        let cursor_y = chunks[2].y + 1 + (cursor_line as u16).saturating_sub(scroll_y);
         f.set_cursor_position((cursor_x, cursor_y));
     }
 

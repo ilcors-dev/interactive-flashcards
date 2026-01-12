@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthChar;
+
 pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
@@ -26,7 +28,7 @@ pub fn calculate_wrapped_cursor_position(
             break;
         }
 
-        let char_width = ch.len_utf8(); // Simplified: using byte length as width
+        let char_width = ch.width().unwrap_or(1);
 
         if current_line_width + char_width > max_width && current_line_width > 0 {
             // Wrap to next line

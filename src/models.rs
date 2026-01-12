@@ -28,6 +28,7 @@ pub struct QuizSession {
     pub ai_tx: Option<std::sync::mpsc::Sender<AiRequest>>,
     pub ai_rx: Option<std::sync::mpsc::Receiver<AiResponse>>,
     pub progress_header_position: u64,
+    pub input_scroll_y: u16,
 }
 
 #[derive(Debug)]
@@ -127,7 +128,7 @@ mod tests {
                 written_to_file: false,
             },
         ];
-        let session = QuizSession {
+        let mut session = QuizSession {
             flashcards: cards.clone(),
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -145,6 +146,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
         assert_eq!(session.flashcards.len(), 2);
         assert_eq!(session.current_index, 0);
@@ -180,6 +182,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
 
         session.showing_answer = true;
@@ -232,6 +235,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
 
         assert_eq!(session.current_index, 0);
@@ -268,7 +272,7 @@ mod tests {
                 written_to_file: false,
             },
         ];
-        let session = QuizSession {
+        let mut session = QuizSession {
             flashcards: cards.clone(),
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -286,6 +290,7 @@ mod tests {
             ai_tx: None,
             ai_rx: None,
             progress_header_position: 0,
+            input_scroll_y: 0,
         };
 
         assert_eq!(
