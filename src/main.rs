@@ -167,31 +167,28 @@ fn main() -> io::Result<()> {
                             }
                             KeyCode::Char('m') => {
                                 app_state = AppState::Menu;
-                                if let Some(mut session) = quiz_session.take() {
-                                    if let Some(file) = session.output_file.take() {
+                                if let Some(mut session) = quiz_session.take()
+                                    && let Some(file) = session.output_file.take() {
                                         drop(file);
                                     }
-                                }
                                 quiz_session = None;
                             }
                             KeyCode::Esc => break,
                             _ => {}
                         },
                         AppState::Quiz => {
-                            if let Some(session) = &mut quiz_session {
-                                if let Err(e) = handle_quiz_input(session, key, &mut app_state) {
+                            if let Some(session) = &mut quiz_session
+                                && let Err(e) = handle_quiz_input(session, key, &mut app_state) {
                                     eprintln!("Error writing to quiz file: {}", e);
                                 }
-                            }
                         }
                         AppState::QuizQuitConfirm => match key.code {
                             KeyCode::Char('y') => {
                                 app_state = AppState::Menu;
-                                if let Some(mut session) = quiz_session.take() {
-                                    if let Some(file) = session.output_file.take() {
+                                if let Some(mut session) = quiz_session.take()
+                                    && let Some(file) = session.output_file.take() {
                                         drop(file);
                                     }
-                                }
                                 quiz_session = None;
                             }
                             KeyCode::Char('n') => {
@@ -221,17 +218,15 @@ fn main() -> io::Result<()> {
                     }
                 }
                 Event::Paste(text) => {
-                    if let AppState::Quiz = app_state {
-                        if let Some(session) = &mut quiz_session {
-                            if !session.showing_answer {
+                    if let AppState::Quiz = app_state
+                        && let Some(session) = &mut quiz_session
+                            && !session.showing_answer {
                                 // Insert the entire pasted text at cursor position
                                 for ch in text.chars() {
                                     session.input_buffer.insert(session.cursor_position, ch);
                                     session.cursor_position += 1;
                                 }
                             }
-                        }
-                    }
                 }
                 _ => {}
             }

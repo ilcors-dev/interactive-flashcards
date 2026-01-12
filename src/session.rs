@@ -18,29 +18,42 @@ pub fn handle_quiz_input(
             KeyCode::Down => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
-                    session.showing_answer = false;
-                    session.last_ai_error = None;
-                    session.input_buffer = session.flashcards[session.current_index]
+                    // Show answer screen if question was already answered, otherwise show input
+                    session.showing_answer = session.flashcards[session.current_index]
                         .user_answer
-                        .as_ref()
-                        .unwrap_or(&String::new())
-                        .clone();
-                    session.cursor_position = session.input_buffer.len();
-                    session.input_scroll_y = 0; // Reset scroll on question navigation
+                        .is_some();
+                    session.last_ai_error = None;
+                    if !session.showing_answer {
+                        // Restore input buffer for unanswered questions
+                        session.input_buffer = session.flashcards[session.current_index]
+                            .user_answer
+                            .as_ref()
+                            .unwrap_or(&String::new())
+                            .clone();
+                        session.cursor_position = session.input_buffer.len();
+                        session.input_scroll_y = 0; // Reset scroll on question navigation
+                    }
                 }
                 Ok(())
             }
             KeyCode::Up => {
                 if session.current_index > 0 {
                     session.current_index -= 1;
-                    session.showing_answer = false;
-                    session.last_ai_error = None;
-                    session.input_buffer = session.flashcards[session.current_index]
+                    // Show answer screen if question was already answered, otherwise show input
+                    session.showing_answer = session.flashcards[session.current_index]
                         .user_answer
-                        .as_ref()
-                        .unwrap_or(&String::new())
-                        .clone();
-                    session.cursor_position = session.input_buffer.len();
+                        .is_some();
+                    session.last_ai_error = None;
+                    if !session.showing_answer {
+                        // Restore input buffer for unanswered questions
+                        session.input_buffer = session.flashcards[session.current_index]
+                            .user_answer
+                            .as_ref()
+                            .unwrap_or(&String::new())
+                            .clone();
+                        session.cursor_position = session.input_buffer.len();
+                        session.input_scroll_y = 0; // Reset scroll on question navigation
+                    }
                 }
                 Ok(())
             }
@@ -130,24 +143,63 @@ pub fn handle_quiz_input(
             KeyCode::Down => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
-                    session.showing_answer = false;
+                    // Show answer screen if question was already answered, otherwise show input
+                    session.showing_answer = session.flashcards[session.current_index]
+                        .user_answer
+                        .is_some();
                     session.last_ai_error = None;
+                    if !session.showing_answer {
+                        // Restore input buffer for unanswered questions
+                        session.input_buffer = session.flashcards[session.current_index]
+                            .user_answer
+                            .as_ref()
+                            .unwrap_or(&String::new())
+                            .clone();
+                        session.cursor_position = session.input_buffer.len();
+                        session.input_scroll_y = 0; // Reset scroll on question navigation
+                    }
                 }
                 Ok(())
             }
             KeyCode::Up => {
                 if session.current_index > 0 {
                     session.current_index -= 1;
-                    session.showing_answer = false;
+                    // Show answer screen if question was already answered, otherwise show input
+                    session.showing_answer = session.flashcards[session.current_index]
+                        .user_answer
+                        .is_some();
                     session.last_ai_error = None;
+                    if !session.showing_answer {
+                        // Restore input buffer for unanswered questions
+                        session.input_buffer = session.flashcards[session.current_index]
+                            .user_answer
+                            .as_ref()
+                            .unwrap_or(&String::new())
+                            .clone();
+                        session.cursor_position = session.input_buffer.len();
+                        session.input_scroll_y = 0; // Reset scroll on question navigation
+                    }
                 }
                 Ok(())
             }
             KeyCode::Enter => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
                     session.current_index += 1;
-                    session.showing_answer = false;
+                    // Show answer screen if question was already answered, otherwise show input
+                    session.showing_answer = session.flashcards[session.current_index]
+                        .user_answer
+                        .is_some();
                     session.last_ai_error = None;
+                    if !session.showing_answer {
+                        // Restore input buffer for unanswered questions
+                        session.input_buffer = session.flashcards[session.current_index]
+                            .user_answer
+                            .as_ref()
+                            .unwrap_or(&String::new())
+                            .clone();
+                        session.cursor_position = session.input_buffer.len();
+                        session.input_scroll_y = 0; // Reset scroll on question navigation
+                    }
                 } else {
                     *app_state = AppState::Summary;
                 }
@@ -875,21 +927,19 @@ mod tests {
         };
         let app_state = &mut AppState::Quiz;
 
-        // Navigate to next question (Down arrow)
+        // Navigate to next question (Down arrow) - both questions are answered, so should show answer screen
         let down_key = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
         let _ = handle_quiz_input(&mut session, down_key, app_state);
 
         assert_eq!(session.current_index, 1);
-        assert_eq!(session.input_buffer, "Answer2");
-        assert_eq!(session.cursor_position, 7); // Length of "Answer2"
+        assert!(session.showing_answer); // Should be in answer mode for answered question
 
-        // Navigate back (Up arrow)
+        // Navigate back (Up arrow) - should also show answer screen
         let up_key = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
         let _ = handle_quiz_input(&mut session, up_key, app_state);
 
         assert_eq!(session.current_index, 0);
-        assert_eq!(session.input_buffer, "Answer1");
-        assert_eq!(session.cursor_position, 7); // Length of "Answer1"
+        assert!(session.showing_answer); // Should be in answer mode for answered question
     }
 
     #[test]
@@ -951,5 +1001,97 @@ mod tests {
         let _ = handle_quiz_input(&mut session, backspace_key, app_state);
         assert_eq!(session.input_buffer, "");
         assert_eq!(session.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_navigation_shows_answer_screen_for_answered_questions() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![
+                Flashcard {
+                    question: "Q1?".to_string(),
+                    answer: "A1".to_string(),
+                    user_answer: Some("User A1".to_string()),
+                    ai_feedback: Some(crate::ai::AIFeedback {
+                        is_correct: true,
+                        correctness_score: 1.0,
+                        corrections: vec![],
+                        explanation: "Correct!".to_string(),
+                        suggestions: vec![],
+                    }),
+                    written_to_file: false,
+                },
+                Flashcard {
+                    question: "Q2?".to_string(),
+                    answer: "A2".to_string(),
+                    user_answer: None, // Unanswered
+                    ai_feedback: None,
+                    written_to_file: false,
+                },
+                Flashcard {
+                    question: "Q3?".to_string(),
+                    answer: "A3".to_string(),
+                    user_answer: Some("User A3".to_string()),
+                    ai_feedback: Some(crate::ai::AIFeedback {
+                        is_correct: false,
+                        correctness_score: 0.5,
+                        corrections: vec!["Correction".to_string()],
+                        explanation: "Partial".to_string(),
+                        suggestions: vec!["Suggestion".to_string()],
+                    }),
+                    written_to_file: false,
+                },
+            ],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: true, // Start on answer screen of Q1
+            input_buffer: String::new(),
+            cursor_position: 0,
+            output_file: None,
+            questions_total: 3,
+            questions_answered: 2,
+            ai_enabled: true,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+            progress_header_position: 0,
+            input_scroll_y: 0,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Navigate to Q2 (unanswered) - should switch to input mode and restore empty buffer
+        let down_key = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, down_key, app_state);
+
+        assert_eq!(session.current_index, 1);
+        assert!(!session.showing_answer); // Should be in input mode for unanswered question
+        assert_eq!(session.input_buffer, ""); // Should be empty for unanswered question
+        assert_eq!(session.cursor_position, 0);
+
+        // Navigate to Q3 (answered) - should switch to answer mode
+        let _ = handle_quiz_input(&mut session, down_key, app_state);
+
+        assert_eq!(session.current_index, 2);
+        assert!(session.showing_answer); // Should be in answer mode for answered question
+                                         // input_buffer should not be restored since we're in answer mode
+
+        // Navigate back to Q2 (unanswered) - should switch to input mode
+        let up_key = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, up_key, app_state);
+
+        assert_eq!(session.current_index, 1);
+        assert!(!session.showing_answer); // Should be in input mode for unanswered question
+        assert_eq!(session.input_buffer, ""); // Should be empty
+
+        // Navigate back to Q1 (answered) - should switch to answer mode
+        let _ = handle_quiz_input(&mut session, up_key, app_state);
+
+        assert_eq!(session.current_index, 0);
+        assert!(session.showing_answer); // Should be in answer mode for answered question
     }
 }
