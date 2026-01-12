@@ -177,14 +177,21 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::from(" Submit Answer  "),
+            Span::from(" Submit  "),
+            Span::styled(
+                "Ctrl+Enter",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::from(" New Line  "),
             Span::styled(
                 "Esc",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::from(" Quit to Menu  "),
+            Span::from(" Quit"),
         ]));
     }
 

@@ -58,7 +58,12 @@ pub fn handle_quiz_input(
                 Ok(())
             }
             KeyCode::Enter => {
-                if !session.input_buffer.trim().is_empty() {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    // Insert newline for multi-line input
+                    session.input_buffer.insert(session.cursor_position, '\n');
+                    session.cursor_position += 1;
+                    Ok(())
+                } else if !session.input_buffer.trim().is_empty() {
                     session.flashcards[session.current_index].user_answer =
                         Some(session.input_buffer.clone());
                     session.flashcards[session.current_index].written_to_file = false;
@@ -883,6 +888,136 @@ mod tests {
 
         assert_eq!(session.input_buffer, original_buffer);
         assert_eq!(session.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_ctrl_enter_inserts_newline() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+                written_to_file: false,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: "Hello".to_string(),
+            cursor_position: 5,
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+            progress_header_position: 0,
+            input_scroll_y: 0,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Press Ctrl+Enter
+        let ctrl_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_enter, app_state);
+
+        // Should insert newline at cursor position
+        assert_eq!(session.input_buffer, "Hello\n");
+        assert_eq!(session.cursor_position, 6);
+        assert!(!session.showing_answer); // Should not submit
+    }
+
+    #[test]
+    fn test_ctrl_enter_in_middle_of_text() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+                written_to_file: false,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: "Hello world".to_string(),
+            cursor_position: 5, // After "Hello"
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+            progress_header_position: 0,
+            input_scroll_y: 0,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Press Ctrl+Enter
+        let ctrl_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_enter, app_state);
+
+        // Should insert newline in middle of text
+        assert_eq!(session.input_buffer, "Hello\n world");
+        assert_eq!(session.cursor_position, 6);
+    }
+
+    #[test]
+    fn test_multiline_answer_submission() {
+        use std::sync::mpsc;
+
+        let (tx, _rx) = mpsc::channel();
+        let mut session = QuizSession {
+            flashcards: vec![Flashcard {
+                question: "Test?".to_string(),
+                answer: "Answer".to_string(),
+                user_answer: None,
+                ai_feedback: None,
+                written_to_file: false,
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: "Line 1\nLine 2\nLine 3".to_string(),
+            cursor_position: 17,
+            output_file: None,
+            questions_total: 1,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+            progress_header_position: 0,
+            input_scroll_y: 0,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        // Press Enter to submit
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, enter, app_state);
+
+        // Should save multi-line answer with newlines preserved
+        assert_eq!(
+            session.flashcards[0].user_answer,
+            Some("Line 1\nLine 2\nLine 3".to_string())
+        );
+        assert!(session.showing_answer); // Should show answer screen
     }
 
     #[test]
