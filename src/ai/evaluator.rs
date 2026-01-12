@@ -42,7 +42,7 @@ pub async fn evaluate_answer(
     question: &str,
     correct_answer: &str,
     user_answer: &str,
-) -> Result<AIEvaluationResult, Box<dyn std::error::Error>> {
+) -> Result<AIEvaluationResult, Box<dyn std::error::Error + Send + Sync>> {
     crate::logger::log("Starting AI evaluation");
     let json_response = client
         .evaluate_answer(question, correct_answer, user_answer, None)
@@ -72,6 +72,90 @@ pub async fn evaluate_answer(
         feedback,
         raw_response: json_response,
     })
+}
+
+#[cfg(test)]
+use std::time::Duration;
+#[cfg(test)]
+use tokio::time::sleep;
+
+/// Mock AI client for testing - simulates AI responses with configurable delays
+#[cfg(test)]
+pub struct MockAiClient {
+    responses: Vec<AIEvaluationResult>,
+    delays: Vec<Duration>,
+    current_index: usize,
+}
+
+#[cfg(test)]
+impl MockAiClient {
+    /// Create a new mock client with default successful responses
+    pub fn new() -> Self {
+        Self {
+            responses: vec![
+                AIEvaluationResult {
+                    feedback: AIFeedback {
+                        is_correct: true,
+                        correctness_score: 1.0,
+                        corrections: vec![],
+                        explanation: "Perfect answer! Well done.".to_string(),
+                        suggestions: vec![],
+                    },
+                    raw_response: r#"{"is_correct": true, "correctness_score": 1.0, "corrections": [], "explanation": "Perfect answer! Well done.", "suggestions": []}"#.to_string(),
+                },
+                AIEvaluationResult {
+                    feedback: AIFeedback {
+                        is_correct: false,
+                        correctness_score: 0.6,
+                        corrections: vec!["Incorrect terminology".to_string()],
+                        explanation: "Good attempt, but there's an error in the terminology.".to_string(),
+                        suggestions: vec!["Review the key terms".to_string()],
+                    },
+                    raw_response: r#"{"is_correct": false, "correctness_score": 0.6, "corrections": ["Incorrect terminology"], "explanation": "Good attempt, but there's an error in the terminology.", "suggestions": ["Review the key terms"]}"#.to_string(),
+                },
+            ],
+            delays: vec![Duration::from_millis(50), Duration::from_millis(75)],
+            current_index: 0,
+        }
+    }
+
+    /// Create mock client with custom responses and delays
+    pub fn with_responses(responses: Vec<AIEvaluationResult>, delays: Vec<Duration>) -> Self {
+        Self {
+            responses,
+            delays,
+            current_index: 0,
+        }
+    }
+
+    /// Simulate AI evaluation with delay
+    pub async fn evaluate_answer(
+        &mut self,
+        _question: &str,
+        _correct_answer: &str,
+        _user_answer: &str,
+    ) -> Result<AIEvaluationResult, Box<dyn std::error::Error + Send + Sync>> {
+        // Simulate network delay
+        if self.current_index < self.delays.len() {
+            sleep(self.delays[self.current_index]).await;
+        }
+
+        // Return configured response
+        if self.current_index < self.responses.len() {
+            let response = self.responses[self.current_index].clone();
+            self.current_index += 1;
+            Ok(response)
+        } else {
+            // Cycle back to first response if we run out
+            self.current_index = 0;
+            Ok(self.responses[0].clone())
+        }
+    }
+
+    /// Reset the mock client state
+    pub fn reset(&mut self) {
+        self.current_index = 0;
+    }
 }
 
 #[cfg(test)]

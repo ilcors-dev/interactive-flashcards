@@ -260,15 +260,17 @@ impl QuizSession {
             flashcard_index
         ));
 
-        if let Some(ref ai_tx) = self.ai_tx {
+        if let Some(ai_tx) = self.ai_tx.clone() {
             let request = AiRequest::Evaluate {
                 flashcard_index,
                 question: flashcard.question.clone(),
                 correct_answer: flashcard.answer.clone(),
                 user_answer: user_answer.clone(),
             };
-            ai_tx.send(request).ok();
-            logger::log("AI request sent through channel");
+            tokio::spawn(async move {
+                let _ = ai_tx.send(request).await;
+            });
+            logger::log("AI request sent through async channel");
         }
 
         self.ai_evaluation_in_progress = true;
@@ -477,9 +479,9 @@ mod tests {
 
     #[test]
     fn test_can_type_r_and_c_in_answers() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -528,11 +530,11 @@ mod tests {
         assert_eq!(session.input_buffer, "rcRC");
     }
 
-    #[test]
-    fn test_ctrl_e_triggers_ai_evaluation() {
-        use std::sync::mpsc;
+    #[tokio::test]
+    async fn test_ctrl_e_triggers_ai_evaluation() {
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -728,9 +730,9 @@ mod tests {
 
     #[test]
     fn test_cursor_left_right_movement() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -787,9 +789,9 @@ mod tests {
 
     #[test]
     fn test_insert_character_at_cursor_position() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -836,9 +838,9 @@ mod tests {
 
     #[test]
     fn test_backspace_deletes_at_cursor_position() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -892,9 +894,9 @@ mod tests {
 
     #[test]
     fn test_ctrl_enter_inserts_newline() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -935,9 +937,9 @@ mod tests {
 
     #[test]
     fn test_ctrl_enter_in_middle_of_text() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -977,9 +979,9 @@ mod tests {
 
     #[test]
     fn test_multiline_answer_submission() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -1022,9 +1024,9 @@ mod tests {
 
     #[test]
     fn test_cursor_position_on_question_navigation() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![
                 Flashcard {
@@ -1079,9 +1081,9 @@ mod tests {
 
     #[test]
     fn test_cursor_edge_cases() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![Flashcard {
                 question: "Test?".to_string(),
@@ -1140,9 +1142,9 @@ mod tests {
 
     #[test]
     fn test_navigation_shows_answer_screen_for_answered_questions() {
-        use std::sync::mpsc;
+        use tokio::sync::mpsc;
 
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel(32);
         let mut session = QuizSession {
             flashcards: vec![
                 Flashcard {

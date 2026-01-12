@@ -37,7 +37,7 @@ impl OpenRouterClient {
         correct_answer: &str,
         user_answer: &str,
         config: Option<&ModelConfig>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let prompt = format!(
             r#"Evaluate this answer and respond ONLY with valid JSON.
 

@@ -6,6 +6,7 @@ pub mod logger;
 pub mod models;
 pub mod session;
 pub mod ui;
+pub mod ui_tests;
 pub mod utils;
 
 // Re-exports for convenience

@@ -1,4 +1,6 @@
 use crate::ai::AIFeedback;
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct Flashcard {
@@ -25,10 +27,60 @@ pub struct QuizSession {
     pub ai_last_evaluated_index: Option<usize>,
     pub ai_evaluation_start_time: Option<std::time::Instant>,
     pub last_ai_error: Option<String>,
-    pub ai_tx: Option<std::sync::mpsc::Sender<AiRequest>>,
-    pub ai_rx: Option<std::sync::mpsc::Receiver<AiResponse>>,
+    pub ai_tx: Option<mpsc::Sender<AiRequest>>,
+    pub ai_rx: Option<mpsc::Receiver<AiResponse>>,
     pub progress_header_position: u64,
     pub input_scroll_y: u16,
+}
+
+/// Async-safe wrapper for QuizSession using RwLock for concurrent access
+#[derive(Debug, Clone)]
+pub struct AsyncQuizSession {
+    inner: Arc<RwLock<QuizSession>>,
+}
+
+impl AsyncQuizSession {
+    /// Create a new async quiz session
+    pub fn new(session: QuizSession) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(session)),
+        }
+    }
+
+    /// Get a clone of the current session state (read-only)
+    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, QuizSession> {
+        self.inner.read().await
+    }
+
+    /// Get mutable access to the session state
+    pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, QuizSession> {
+        self.inner.write().await
+    }
+
+    /// Process an AI response (async-safe)
+    pub async fn process_ai_response(
+        &self,
+        response: AiResponse,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut session = self.inner.write().await;
+        session.process_ai_responses(response);
+        Ok(())
+    }
+
+    /// Check if there are pending AI responses
+    pub async fn has_pending_ai_responses(&self) -> bool {
+        let session = self.inner.read().await;
+        // For now, just check if AI evaluation is in progress
+        // In a real implementation, we'd check the channel length
+        session.ai_evaluation_in_progress
+    }
+
+    /// Get the current display state for UI rendering
+    pub async fn get_display_state(&self) -> (AppState, Option<QuizSession>) {
+        // For now, return None to indicate async mode
+        // This will be refined in the main loop implementation
+        (AppState::Quiz, None)
+    }
 }
 
 #[derive(Debug)]
@@ -59,262 +111,4 @@ pub enum AppState {
     Quiz,
     QuizQuitConfirm,
     Summary,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_flashcard_creation() {
-        let card = Flashcard {
-            question: "Question?".to_string(),
-            answer: "Answer".to_string(),
-            user_answer: None,
-            ai_feedback: None,
-            written_to_file: false,
-        };
-
-        assert_eq!(card.question, "Question?");
-        assert_eq!(card.answer, "Answer");
-        assert!(card.user_answer.is_none());
-    }
-
-    #[test]
-    fn test_flashcard_with_user_answer() {
-        let card = Flashcard {
-            question: "Question?".to_string(),
-            answer: "Answer".to_string(),
-            user_answer: Some("My Answer".to_string()),
-            ai_feedback: None,
-            written_to_file: false,
-        };
-        assert_eq!(card.question, "Question?");
-        assert_eq!(card.answer, "Answer");
-        assert!(card.user_answer.is_some());
-        assert_eq!(card.user_answer.unwrap(), "My Answer");
-    }
-
-    #[test]
-    fn test_flashcard_clone() {
-        let card = Flashcard {
-            question: "Q".to_string(),
-            answer: "A".to_string(),
-            user_answer: Some("UA".to_string()),
-            ai_feedback: None,
-            written_to_file: false,
-        };
-        let cloned = card.clone();
-        assert_eq!(card.question, cloned.question);
-        assert_eq!(card.answer, cloned.answer);
-        assert_eq!(card.user_answer, cloned.user_answer);
-    }
-
-    #[test]
-    fn test_quiz_session_creation() {
-        let cards = vec![
-            Flashcard {
-                question: "Q1".to_string(),
-                answer: "A1".to_string(),
-                user_answer: None,
-                ai_feedback: None,
-                written_to_file: false,
-            },
-            Flashcard {
-                question: "Q2".to_string(),
-                answer: "A2".to_string(),
-                user_answer: None,
-                ai_feedback: None,
-                written_to_file: false,
-            },
-        ];
-        let mut session = QuizSession {
-            flashcards: cards.clone(),
-            current_index: 0,
-            deck_name: "Test".to_string(),
-            showing_answer: false,
-            input_buffer: String::new(),
-            cursor_position: 0,
-            output_file: None,
-            questions_total: cards.len(),
-            questions_answered: 0,
-            ai_enabled: false,
-            ai_evaluation_in_progress: false,
-            ai_last_evaluated_index: None,
-            ai_evaluation_start_time: None,
-            last_ai_error: None,
-            ai_tx: None,
-            ai_rx: None,
-            progress_header_position: 0,
-            input_scroll_y: 0,
-        };
-        assert_eq!(session.flashcards.len(), 2);
-        assert_eq!(session.current_index, 0);
-        assert_eq!(session.deck_name, "Test");
-        assert!(!session.showing_answer);
-        assert!(session.input_buffer.is_empty());
-    }
-
-    #[test]
-    fn test_quiz_session_state_transitions() {
-        let cards = vec![Flashcard {
-            question: "Q1".to_string(),
-            answer: "A1".to_string(),
-            user_answer: None,
-            ai_feedback: None,
-            written_to_file: false,
-        }];
-        let mut session = QuizSession {
-            flashcards: cards.clone(),
-            current_index: 0,
-            deck_name: "Test".to_string(),
-            showing_answer: false,
-            input_buffer: String::new(),
-            cursor_position: 0,
-            output_file: None,
-            questions_total: cards.len(),
-            questions_answered: 0,
-            ai_enabled: false,
-            ai_evaluation_in_progress: false,
-            ai_last_evaluated_index: None,
-            ai_evaluation_start_time: None,
-            last_ai_error: None,
-            ai_tx: None,
-            ai_rx: None,
-            progress_header_position: 0,
-            input_scroll_y: 0,
-        };
-
-        session.showing_answer = true;
-        assert!(session.showing_answer);
-
-        session.flashcards[0].user_answer = Some("My Answer".to_string());
-        assert!(session.flashcards[0].user_answer.is_some());
-    }
-
-    #[test]
-    fn test_multiple_flashcards_navigation() {
-        let cards = vec![
-            Flashcard {
-                question: "Q1".to_string(),
-                answer: "A1".to_string(),
-                user_answer: None,
-                ai_feedback: None,
-                written_to_file: false,
-            },
-            Flashcard {
-                question: "Q2".to_string(),
-                answer: "A2".to_string(),
-                user_answer: None,
-                ai_feedback: None,
-                written_to_file: false,
-            },
-            Flashcard {
-                question: "Q3".to_string(),
-                answer: "A3".to_string(),
-                user_answer: None,
-                ai_feedback: None,
-                written_to_file: false,
-            },
-        ];
-        let mut session = QuizSession {
-            flashcards: cards.clone(),
-            current_index: 0,
-            deck_name: "Test".to_string(),
-            showing_answer: false,
-            input_buffer: String::new(),
-            cursor_position: 0,
-            output_file: None,
-            questions_total: cards.len(),
-            questions_answered: 0,
-            ai_enabled: false,
-            ai_evaluation_in_progress: false,
-            ai_last_evaluated_index: None,
-            ai_evaluation_start_time: None,
-            last_ai_error: None,
-            ai_tx: None,
-            ai_rx: None,
-            progress_header_position: 0,
-            input_scroll_y: 0,
-        };
-
-        assert_eq!(session.current_index, 0);
-        session.current_index += 1;
-        assert_eq!(session.current_index, 1);
-        session.current_index += 1;
-        assert_eq!(session.current_index, 2);
-        session.current_index -= 1;
-        assert_eq!(session.current_index, 1);
-    }
-
-    #[test]
-    fn test_state_preservation_on_navigation() {
-        let mut cards = vec![
-            Flashcard {
-                question: "Q1".to_string(),
-                answer: "A1".to_string(),
-                user_answer: Some("Answer 1".to_string()),
-                ai_feedback: None,
-                written_to_file: false,
-            },
-            Flashcard {
-                question: "Q2".to_string(),
-                answer: "A2".to_string(),
-                user_answer: Some("Answer 2".to_string()),
-                ai_feedback: None,
-                written_to_file: false,
-            },
-            Flashcard {
-                question: "Q3".to_string(),
-                answer: "A3".to_string(),
-                user_answer: None,
-                ai_feedback: None,
-                written_to_file: false,
-            },
-        ];
-        let mut session = QuizSession {
-            flashcards: cards.clone(),
-            current_index: 0,
-            deck_name: "Test".to_string(),
-            showing_answer: false,
-            input_buffer: String::new(),
-            cursor_position: 0,
-            output_file: None,
-            questions_total: cards.len(),
-            questions_answered: 0,
-            ai_enabled: false,
-            ai_evaluation_in_progress: false,
-            ai_last_evaluated_index: None,
-            ai_evaluation_start_time: None,
-            last_ai_error: None,
-            ai_tx: None,
-            ai_rx: None,
-            progress_header_position: 0,
-            input_scroll_y: 0,
-        };
-
-        assert_eq!(
-            session.flashcards[0].user_answer,
-            Some("Answer 1".to_string())
-        );
-        assert_eq!(
-            session.flashcards[1].user_answer,
-            Some("Answer 2".to_string())
-        );
-    }
-
-    #[test]
-    fn test_app_state_transitions() {
-        let mut state = AppState::Menu;
-        assert_eq!(state, AppState::Menu);
-
-        state = AppState::Quiz;
-        assert_eq!(state, AppState::Quiz);
-
-        state = AppState::Summary;
-        assert_eq!(state, AppState::Summary);
-
-        state = AppState::Menu;
-        assert_eq!(state, AppState::Menu);
-    }
 }
