@@ -17,7 +17,12 @@ use tokio::time::{self, Duration};
 
 use interactive_flashcards::{
     ai_worker, draw_menu, draw_quit_confirmation, draw_quiz, draw_summary, get_csv_files,
-    handle_quiz_input, load_csv, logger, models, write_session_header, AppState, QuizSession,
+    handle_quiz_input, load_csv, logger,
+    models::{
+        AiRequest, AiResponse, AppState, QuizSession, UiMenuState, UiQuizState, UiState,
+        UiStateTypes,
+    },
+    write_session_header,
 };
 
 fn get_quiz_filename(deck_name: &str) -> String {
@@ -56,7 +61,10 @@ async fn main() -> io::Result<()> {
     let mut ai_timeout_interval = time::interval(Duration::from_secs(30));
 
     // Track UI state to avoid unnecessary redraws
-    let mut last_ui_state = (AppState::Menu, None); // (app_state, state_summary)
+    let mut last_ui_state = UiState {
+        app_state: AppState::Menu,
+        current: None,
+    };
     let mut is_first_draw = true; // Ensure UI draws on application startup
 
     // Regression test: Verify UI draws on first iteration
@@ -65,35 +73,49 @@ async fn main() -> io::Result<()> {
     loop {
         // Check if UI needs updating based on state changes
         let current_ui_state = match app_state {
-            AppState::Menu => (
-                AppState::Menu,
-                Some((selected_file_index, false, false, 0, 0, 0, false, 0, 0)),
-            ),
+            AppState::Menu => UiState {
+                app_state: AppState::Menu,
+                current: Some(UiStateTypes::Menu(UiMenuState {
+                    selected_file_index,
+                })),
+            },
             AppState::Quiz => {
                 if let Some(session) = &quiz_session {
                     // Comprehensive state tracking for all UI-changing elements
-                    let session_summary = (
-                        session.current_index,
-                        session.showing_answer,
-                        session.ai_evaluation_in_progress,
-                        session.input_buffer.len(), // Text content length
-                        session.cursor_position,    // Cursor position
-                        session.input_scroll_y,     // Scroll position for long text
-                        session.last_ai_error.is_some(), // Error message presence
-                        session.questions_answered, // Progress indicator
-                        session
+                    let quiz_state = UiQuizState {
+                        current_index: session.current_index,
+                        showing_answer: session.showing_answer,
+                        ai_evaluation_in_progress: session.ai_evaluation_in_progress,
+                        input_buffer_len: session.input_buffer.len(), // Text content length
+                        cursor_position: session.cursor_position,     // Cursor position
+                        input_scroll_y: session.input_scroll_y, // Scroll position for long text
+                        has_ai_error: session.last_ai_error.is_some(), // Error message presence
+                        questions_answered: session.questions_answered, // Progress indicator
+                        ai_feedback_count: session
                             .flashcards
                             .iter()
                             .filter(|f| f.ai_feedback.is_some())
                             .count(), // AI feedback count
-                    );
-                    (AppState::Quiz, Some(session_summary))
+                    };
+                    UiState {
+                        app_state: AppState::Quiz,
+                        current: Some(UiStateTypes::Quiz(quiz_state)),
+                    }
                 } else {
-                    (AppState::Quiz, None)
+                    UiState {
+                        app_state: AppState::Quiz,
+                        current: None,
+                    }
                 }
             }
-            AppState::QuizQuitConfirm => (AppState::QuizQuitConfirm, None),
-            AppState::Summary => (AppState::Summary, None),
+            AppState::QuizQuitConfirm => UiState {
+                app_state: AppState::QuizQuitConfirm,
+                current: None,
+            },
+            AppState::Summary => UiState {
+                app_state: AppState::Summary,
+                current: None,
+            },
         };
 
         // Always draw on first iteration, then only redraw if state has changed
@@ -115,7 +137,7 @@ async fn main() -> io::Result<()> {
                     }
                 }
             })?;
-            last_ui_state = current_ui_state;
+            last_ui_state = current_ui_state.clone();
             is_first_draw = false;
         }
 
@@ -166,8 +188,8 @@ async fn main() -> io::Result<()> {
                                           )?;
 
                                           // Create async channels for this quiz session (buffered)
-                                        let (request_tx, request_rx) = mpsc::channel::<models::AiRequest>(32);
-                                        let (response_tx, response_rx) = mpsc::channel::<models::AiResponse>(32);
+                                        let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
+                                        let (response_tx, response_rx) = mpsc::channel::<AiResponse>(32);
 
                                         // Spawn AI worker if enabled
                                         if ai_enabled {
@@ -283,7 +305,10 @@ async fn main() -> io::Result<()> {
                     session.process_ai_responses(response);
                     quiz_session = Some(session);
                     // Force UI redraw for immediate AI feedback display
-                    last_ui_state = (AppState::Menu, None);
+                    last_ui_state = UiState {
+                        app_state: AppState::Menu,
+                        current: None,
+                    };
                 }
             }
 
@@ -301,7 +326,10 @@ async fn main() -> io::Result<()> {
                                 logger::log("AI evaluation timed out after 30 seconds");
 
                                 // Force UI redraw for timeout message
-                                last_ui_state = (AppState::Menu, None);
+                                last_ui_state = UiState {
+                                    app_state: AppState::Menu,
+                                    current: None,
+                                };
                             }
                     quiz_session = Some(session);
                 }

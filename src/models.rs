@@ -105,7 +105,37 @@ pub enum AiResponse {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiState {
+    pub app_state: AppState,
+    pub current: Option<UiStateTypes>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiStateTypes {
+    Menu(UiMenuState),
+    Quiz(UiQuizState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiMenuState {
+    pub selected_file_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiQuizState {
+    pub current_index: usize,
+    pub showing_answer: bool,
+    pub ai_evaluation_in_progress: bool,
+    pub input_buffer_len: usize,
+    pub cursor_position: usize,
+    pub input_scroll_y: u16,
+    pub has_ai_error: bool,
+    pub questions_answered: usize,
+    pub ai_feedback_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
     Menu,
     Quiz,
