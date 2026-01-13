@@ -20,3 +20,8 @@ The CSV files contain pairs of questions (first column) and answers (second colu
   - The PROGRESS.md must reflect the current state of the implementation.
 - When writing code, do not add comments that do not add value. Prefer self-explanatory code over comments that do not add anything useful.
   - Only add comments where the code is complex or non-obvious or part of a choice that needs explanation
+
+## Plan Mode
+
+- Make the plan extremely concise. Sacrifice grammar for the sake of concision.
+- At the end of each plan, give me a list of unresolved questions to answer, if any.
