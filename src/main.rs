@@ -50,10 +50,6 @@ async fn main() -> io::Result<()> {
     let mut quiz_session: Option<QuizSession> = None;
     let ai_enabled = std::env::var("OPENROUTER_API_KEY").is_ok();
 
-    if ai_enabled {
-        eprintln!("interactive-flashcards: AI evaluation enabled");
-    }
-
     // Channels will be created when starting a quiz session
 
     // Create async event stream and timeout timer for event-driven architecture
