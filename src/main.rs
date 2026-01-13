@@ -166,8 +166,7 @@ async fn main() -> io::Result<()> {
                                 if !csv_files.is_empty()
                                     && let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
                                         let deck_name = csv_files[selected_file_index]
-                                            .file_stem()
-                                            .and_then(|s| Some(s.to_string_lossy().to_string()))
+                                            .file_stem().map(|s| s.to_string_lossy().to_string())
                                             .unwrap_or_else(|| "unknown_deck".to_string());
                                         let mut cards = flashcards;
                                         cards.shuffle(&mut rand::thread_rng());
