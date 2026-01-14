@@ -45,14 +45,18 @@ Question: {}
 Correct Answer: {}
 User's Answer: {}
 
-IMPORTANT: Respond ONLY with this exact JSON structure (no markdown, no extra text):
+IMPORTANT:
+
+- Respond ONLY with this exact JSON structure (no markdown, no extra text):
 {{
     "is_correct": boolean,
     "correctness_score": float between 0.0 and 1.0,
     "corrections": ["correction1", "correction2"],
     "explanation": "detailed explanation. must contain also deep dives on the topic regardless of correctness",
     "suggestions": ["suggestion1", "suggestion2"]
-}}"#,
+}}
+- Do not account for minor typos in the user's answer when determining correctness.
+"#,
             question, correct_answer, user_answer
         );
 
