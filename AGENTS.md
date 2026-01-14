@@ -24,4 +24,4 @@ The CSV files contain pairs of questions (first column) and answers (second colu
 ## Plan Mode
 
 - Make the plan extremely concise. Sacrifice grammar for the sake of concision.
-- At the end of each plan, give me a list of unresolved questions to answer, if any.
+- At the end of each plan, give me an ordered numerical list of unresolved questions to answer, if any.
