@@ -1,6 +1,7 @@
 use crossterm::{
     event::{
-        DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyModifiers,
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, EventStream, KeyCode, KeyModifiers, MouseEventKind,
     },
     execute,
     terminal::{enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -40,7 +41,12 @@ async fn main() -> io::Result<()> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        EnableMouseCapture
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -271,13 +277,21 @@ async fn main() -> io::Result<()> {
                     Event::Paste(text) => {
                         if let AppState::Quiz = app_state
                             && let Some(session) = &mut quiz_session
-                                && !session.showing_answer {
-                                    // Insert the entire pasted text at cursor position
-                                    for ch in text.chars() {
-                                        session.input_buffer.insert(session.cursor_position, ch);
-                                        session.cursor_position += 1;
-                                    }
-                                }
+                            && !session.showing_answer {
+                            // Insert the entire pasted text at cursor position
+                            for ch in text.chars() {
+                                session.input_buffer.insert(session.cursor_position, ch);
+                                session.cursor_position += 1;
+                            }
+                        }
+                    }
+                    Event::Mouse(mouse_event) => {
+                        match mouse_event.kind {
+                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                                // Ignore scroll events to prevent navigation
+                            }
+                            _ => {}
+                        }
                     }
                     _ => {}
                 }
@@ -335,7 +349,8 @@ async fn main() -> io::Result<()> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableBracketedPaste
+        DisableBracketedPaste,
+        DisableMouseCapture
     )?;
     terminal.show_cursor()?;
 
