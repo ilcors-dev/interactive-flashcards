@@ -13,8 +13,8 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
         .margin(1)
         .constraints([
             Constraint::Length(3),
-            Constraint::Min(5),
-            Constraint::Min(10),
+            Constraint::Min(3),
+            Constraint::Percentage(70),
             Constraint::Length(3),
         ])
         .split(f.area());
