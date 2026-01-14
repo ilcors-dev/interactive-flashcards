@@ -67,13 +67,6 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
 
     let help_text = vec![Line::from(vec![
         Span::styled(
-            "r",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::from(" Restart Deck  "),
-        Span::styled(
             "m",
             Style::default()
                 .fg(Color::Cyan)
@@ -81,19 +74,12 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
         ),
         Span::from(" Main Menu  "),
         Span::styled(
-            "q",
+            "Esc",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::from(" Quit  "),
-        Span::styled(
-            "Ctrl+C",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::from(" Exit App"),
     ])];
     let help = Paragraph::new(help_text)
         .alignment(Alignment::Center)

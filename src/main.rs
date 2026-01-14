@@ -56,8 +56,6 @@ async fn main() -> io::Result<()> {
     let mut quiz_session: Option<QuizSession> = None;
     let ai_enabled = std::env::var("OPENROUTER_API_KEY").is_ok();
 
-    // Channels will be created when starting a quiz session
-
     // Create async event stream and timeout timer for event-driven architecture
     let mut event_stream = EventStream::new();
     let mut ai_timeout_interval = time::interval(Duration::from_secs(30));
@@ -68,9 +66,6 @@ async fn main() -> io::Result<()> {
         current: None,
     };
     let mut is_first_draw = true; // Ensure UI draws on application startup
-
-    // Regression test: Verify UI draws on first iteration
-    // This prevents the bug where conditional drawing prevented initial display
 
     loop {
         // Check if UI needs updating based on state changes
@@ -254,21 +249,14 @@ async fn main() -> io::Result<()> {
                             _ => {}
                         },
                         AppState::Summary => match key.code {
-                            KeyCode::Char('r') => {
-                                if let Some(session) = &mut quiz_session {
-                                    let mut cards = session.flashcards.clone();
-                                    for card in &mut cards {
-                                        card.user_answer = None;
+                            KeyCode::Char('m') => {
+                                app_state = AppState::Menu;
+                                if let Some(mut session) = quiz_session.take()
+                                    && let Some(file) = session.output_file.take() {
+                                        drop(file);
                                     }
-                                    cards.shuffle(&mut rand::thread_rng());
-                                    session.flashcards = cards;
-                                    session.current_index = 0;
-                                    session.showing_answer = false;
-                                    session.input_buffer = String::new();
-                                    session.cursor_position = 0;
-                                    app_state = AppState::Quiz;
-                                }
-                            }
+                                quiz_session = None;
+                            },
                             KeyCode::Esc => break,
                             _ => {}
                         },
