@@ -143,125 +143,125 @@ async fn main() -> io::Result<()> {
             // Handle user input events
             Some(event_result) = event_stream.next() => {
                 match event_result? {
-                Event::Key(key) => {
-                    if key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        break;
-                    }
-                    match app_state {
-                        AppState::Menu => match key.code {
-                            KeyCode::Up => {
-                                selected_file_index = selected_file_index.saturating_sub(1);
-                            }
-                            KeyCode::Down => {
-                                if selected_file_index < csv_files.len().saturating_sub(1) {
-                                    selected_file_index += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if !csv_files.is_empty()
-                                    && let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
-                                        let deck_name = csv_files[selected_file_index]
-                                            .file_stem().map(|s| s.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| "unknown_deck".to_string());
-                                        let mut cards = flashcards;
-                                        cards.shuffle(&mut rand::thread_rng());
-
-                                        let filename = get_quiz_filename(&deck_name);
-                                        let mut output_file = match fs::File::create(&filename) {
-                                            Ok(file) => file,
-                                            Err(e) => {
-                                                eprintln!("Failed to create quiz file: {}", e);
-                                                return Ok(());
-                                            }
-                                        };
-
-                                          let progress_header_position = write_session_header(
-                                              &mut output_file,
-                                              &deck_name,
-                                              cards.len(),
-                                          )?;
-
-                                          // Create async channels for this quiz session (buffered)
-                                        let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
-                                        let (response_tx, response_rx) = mpsc::channel::<AiResponse>(32);
-
-                                        // Spawn AI worker if enabled
-                                        if ai_enabled {
-                                            let _ai_handle = ai_worker::spawn_ai_worker(response_tx, request_rx);
-                                        }
-
-                                        let questions_total = cards.len();
-                                        quiz_session = Some(QuizSession {
-                                            flashcards: cards,
-                                            current_index: 0,
-                                            deck_name,
-                                            showing_answer: false,
-                                            input_buffer: String::new(),
-                                            cursor_position: 0,
-                                            output_file: Some(output_file),
-                                            questions_total,
-                                            questions_answered: 0,
-                                            ai_enabled,
-                                            ai_evaluation_in_progress: false,
-                                            ai_last_evaluated_index: None,
-                                            ai_evaluation_start_time: None,
-                                            last_ai_error: None,
-                                            ai_tx: if ai_enabled { Some(request_tx) } else { None },
-                                            ai_rx: if ai_enabled { Some(response_rx) } else { None },
-                                            progress_header_position,
-                                            input_scroll_y: 0,
-                                        });
-
-                                        app_state = AppState::Quiz;
-                                    }
-                            }
-                            KeyCode::Char('m') => {
-                                app_state = AppState::Menu;
-                                if let Some(mut session) = quiz_session.take()
-                                    && let Some(file) = session.output_file.take() {
-                                        drop(file);
-                                    }
-                                quiz_session = None;
-                            }
-                            KeyCode::Esc => break,
-                            _ => {}
-                        },
-                        AppState::Quiz => {
-                            if let Some(session) = &mut quiz_session
-                                && let Err(e) = handle_quiz_input(session, key, &mut app_state) {
-                                    eprintln!("Error writing to quiz file: {}", e);
-                                }
+                    Event::Key(key) => {
+                        if key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(KeyModifiers::CONTROL)
+                        {
+                            break;
                         }
-                        AppState::QuizQuitConfirm => match key.code {
-                            KeyCode::Char('y') => {
-                                app_state = AppState::Menu;
-                                if let Some(mut session) = quiz_session.take()
-                                    && let Some(file) = session.output_file.take() {
-                                        drop(file);
+                        match app_state {
+                            AppState::Menu => match key.code {
+                                KeyCode::Up => {
+                                    selected_file_index = selected_file_index.saturating_sub(1);
+                                }
+                                KeyCode::Down => {
+                                    if selected_file_index < csv_files.len().saturating_sub(1) {
+                                        selected_file_index += 1;
                                     }
-                                quiz_session = None;
-                            }
-                            KeyCode::Char('n') => {
-                                app_state = AppState::Quiz;
-                            }
-                            _ => {}
-                        },
-                        AppState::Summary => match key.code {
-                            KeyCode::Char('m') => {
-                                app_state = AppState::Menu;
-                                if let Some(mut session) = quiz_session.take()
-                                    && let Some(file) = session.output_file.take() {
-                                        drop(file);
-                                    }
-                                quiz_session = None;
+                                }
+                                KeyCode::Enter => {
+                                    if !csv_files.is_empty()
+                                        && let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
+                                            let deck_name = csv_files[selected_file_index]
+                                                .file_stem().map(|s| s.to_string_lossy().to_string())
+                                                .unwrap_or_else(|| "unknown_deck".to_string());
+                                            let mut cards = flashcards;
+                                            cards.shuffle(&mut rand::thread_rng());
+
+                                            let filename = get_quiz_filename(&deck_name);
+                                            let mut output_file = match fs::File::create(&filename) {
+                                                Ok(file) => file,
+                                                Err(e) => {
+                                                    eprintln!("Failed to create quiz file: {}", e);
+                                                    return Ok(());
+                                                }
+                                            };
+
+                                              let progress_header_position = write_session_header(
+                                                  &mut output_file,
+                                                  &deck_name,
+                                                  cards.len(),
+                                              )?;
+
+                                              // Create async channels for this quiz session (buffered)
+                                            let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
+                                            let (response_tx, response_rx) = mpsc::channel::<AiResponse>(32);
+
+                                            // Spawn AI worker if enabled
+                                            if ai_enabled {
+                                                let _ai_handle = ai_worker::spawn_ai_worker(response_tx, request_rx);
+                                            }
+
+                                            let questions_total = cards.len();
+                                            quiz_session = Some(QuizSession {
+                                                flashcards: cards,
+                                                current_index: 0,
+                                                deck_name,
+                                                showing_answer: false,
+                                                input_buffer: String::new(),
+                                                cursor_position: 0,
+                                                output_file: Some(output_file),
+                                                questions_total,
+                                                questions_answered: 0,
+                                                ai_enabled,
+                                                ai_evaluation_in_progress: false,
+                                                ai_last_evaluated_index: None,
+                                                ai_evaluation_start_time: None,
+                                                last_ai_error: None,
+                                                ai_tx: if ai_enabled { Some(request_tx) } else { None },
+                                                ai_rx: if ai_enabled { Some(response_rx) } else { None },
+                                                progress_header_position,
+                                                input_scroll_y: 0,
+                                            });
+
+                                            app_state = AppState::Quiz;
+                                        }
+                                }
+                                KeyCode::Char('m') => {
+                                    app_state = AppState::Menu;
+                                    if let Some(mut session) = quiz_session.take()
+                                        && let Some(file) = session.output_file.take() {
+                                            drop(file);
+                                        }
+                                    quiz_session = None;
+                                }
+                                KeyCode::Esc => break,
+                                _ => {}
                             },
-                            KeyCode::Esc => break,
-                            _ => {}
-                        },
-                    }
-                }
+                            AppState::Quiz => {
+                                if let Some(session) = &mut quiz_session
+                                    && let Err(e) = handle_quiz_input(session, key, &mut app_state) {
+                                        eprintln!("Error writing to quiz file: {}", e);
+                                    }
+                            }
+                            AppState::QuizQuitConfirm => match key.code {
+                                KeyCode::Char('y') => {
+                                    app_state = AppState::Menu;
+                                    if let Some(mut session) = quiz_session.take()
+                                        && let Some(file) = session.output_file.take() {
+                                            drop(file);
+                                        }
+                                    quiz_session = None;
+                                }
+                                KeyCode::Char('n') => {
+                                    app_state = AppState::Quiz;
+                                }
+                                _ => {}
+                            },
+                            AppState::Summary => match key.code {
+                                KeyCode::Char('m') => {
+                                    app_state = AppState::Menu;
+                                    if let Some(mut session) = quiz_session.take()
+                                        && let Some(file) = session.output_file.take() {
+                                            drop(file);
+                                        }
+                                    quiz_session = None;
+                                },
+                                KeyCode::Esc => break,
+                                _ => {}
+                            },
+                        }
+                    },
                     Event::Paste(text) => {
                         if let AppState::Quiz = app_state
                             && let Some(session) = &mut quiz_session
@@ -283,7 +283,7 @@ async fn main() -> io::Result<()> {
                     }
                     _ => {}
                 }
-            }
+            },
 
             // Async AI response receiving
             Some(response) = async {
