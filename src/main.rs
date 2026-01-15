@@ -1,7 +1,8 @@
 use crossterm::{
     event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, EventStream, KeyCode, KeyModifiers, MouseEventKind,
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture, Event, EventStream, KeyCode, KeyModifiers,
+        MouseEventKind,
     },
     execute,
     terminal::{enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -45,7 +46,8 @@ async fn main() -> io::Result<()> {
         stdout,
         EnterAlternateScreen,
         EnableBracketedPaste,
-        EnableMouseCapture
+        EnableMouseCapture,
+        EnableFocusChange
     )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -281,7 +283,27 @@ async fn main() -> io::Result<()> {
                             _ => {}
                         }
                     }
-                    _ => {}
+                    // Force redraw by setting last_ui_state to an invalid state.
+                    // NOTE: This does NOT affect what is actually drawn - the terminal.draw()
+                    // closure uses the CURRENT app_state variable, not last_ui_state.
+                    // Setting app_state to Menu here only makes current_ui_state != last_ui_state,
+                    // triggering should_draw = true on the next loop iteration.
+                    // The actual drawing uses the current app_state (Quiz, Menu, etc.).
+                    Event::FocusGained => {
+                        last_ui_state = UiState {
+                            app_state: AppState::Menu,
+                            current: None,
+                        };
+                    }
+                    Event::FocusLost => {
+                        // Do nothing - AI evaluation continues uninterrupted
+                    }
+                    Event::Resize(_, _) => {
+                        last_ui_state = UiState {
+                            app_state: AppState::Menu,
+                            current: None,
+                        };
+                    }
                 }
             },
 
@@ -338,7 +360,8 @@ async fn main() -> io::Result<()> {
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableBracketedPaste,
-        DisableMouseCapture
+        DisableMouseCapture,
+        DisableFocusChange
     )?;
     terminal.show_cursor()?;
 
