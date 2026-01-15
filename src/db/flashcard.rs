@@ -133,8 +133,8 @@ mod tests {
     fn test_initialize_and_save_answer() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 3).unwrap();
 
@@ -158,8 +158,8 @@ mod tests {
     fn test_save_answer_with_ai_feedback() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 1).unwrap();
 
@@ -192,8 +192,8 @@ mod tests {
     fn test_get_answer_count() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 3).unwrap();
 

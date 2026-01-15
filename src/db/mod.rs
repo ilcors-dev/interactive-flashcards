@@ -4,6 +4,11 @@ use std::path::PathBuf;
 pub mod flashcard;
 pub mod session;
 
+mod embedded_migrations {
+    use refinery::embed_migrations;
+    embed_migrations!("./src/db/migrations");
+}
+
 fn get_data_dir() -> PathBuf {
     if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
@@ -28,60 +33,17 @@ pub fn init_db() -> Result<Connection> {
         std::fs::create_dir_all(parent).ok();
     }
 
-    let conn = Connection::open(&db_path)?;
+    let mut conn = Connection::open(&db_path)?;
 
-    run_migrations(&conn)?;
+    run_migrations(&mut conn)?;
 
     Ok(conn)
 }
 
-fn run_migrations(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            deck_name TEXT NOT NULL,
-            started_at INTEGER NOT NULL,
-            completed_at INTEGER,
-            questions_total INTEGER NOT NULL,
-            questions_answered INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sessions_deck ON sessions(deck_name)",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sessions_completed ON sessions(completed_at)",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS flashcards (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            question TEXT NOT NULL,
-            answer TEXT NOT NULL,
-            user_answer TEXT,
-            ai_feedback TEXT,
-            answered_at INTEGER,
-            display_order INTEGER NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            FOREIGN KEY (session_id) REFERENCES sessions(id)
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_flashcards_session ON flashcards(session_id)",
-        [],
-    )?;
-
+fn run_migrations(conn: &mut Connection) -> Result<()> {
+    embedded_migrations::migrations::runner()
+        .run(conn)
+        .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
     Ok(())
 }
 
@@ -92,8 +54,8 @@ mod tests {
     #[test]
     fn test_init_db_creates_directory() {
         let test_db_path = std::env::temp_dir().join("test_if.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table'")
@@ -113,8 +75,8 @@ mod tests {
 
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         assert_eq!(session_id, 1);
@@ -134,8 +96,8 @@ mod tests {
 
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         update_progress(&conn, session_id, 5).unwrap();
@@ -150,8 +112,8 @@ mod tests {
 
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         complete_session(&conn, session_id).unwrap();

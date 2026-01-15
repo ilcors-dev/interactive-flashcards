@@ -91,8 +91,8 @@ mod tests {
     fn test_create_and_get_session() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         assert_eq!(session_id, 1);
@@ -108,8 +108,8 @@ mod tests {
     fn test_update_progress() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         update_progress(&conn, session_id, 5).unwrap();
@@ -122,8 +122,8 @@ mod tests {
     fn test_complete_session() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         complete_session(&conn, session_id).unwrap();
@@ -136,8 +136,8 @@ mod tests {
     fn test_get_nonexistent_session() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
-        let conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&conn).unwrap();
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
 
         let session = get_session(&conn, 999).unwrap();
         assert!(session.is_none());
