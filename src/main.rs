@@ -7,13 +7,12 @@ use crossterm::{
     execute,
     terminal::{enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use interactive_flashcards::db::{self, flashcard, session};
 use rand::seq::SliceRandom;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::fs;
 use std::io;
 
 use futures::StreamExt;
-use std::time::UNIX_EPOCH;
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration};
 
@@ -24,16 +23,7 @@ use interactive_flashcards::{
         AiRequest, AiResponse, AppState, QuizSession, UiMenuState, UiQuizState, UiState,
         UiStateTypes,
     },
-    write_session_header,
 };
-
-fn get_quiz_filename(deck_name: &str) -> String {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("quiz_{}_{}.txt", deck_name, timestamp)
-}
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -170,22 +160,32 @@ async fn main() -> io::Result<()> {
                                             let mut cards = flashcards;
                                             cards.shuffle(&mut rand::thread_rng());
 
-                                            let filename = get_quiz_filename(&deck_name);
-                                            let mut output_file = match fs::File::create(&filename) {
-                                                Ok(file) => file,
+                                            let conn = match db::init_db() {
+                                                Ok(conn) => conn,
                                                 Err(e) => {
-                                                    eprintln!("Failed to create quiz file: {}", e);
+                                                    eprintln!("Failed to initialize database: {}", e);
                                                     return Ok(());
                                                 }
                                             };
 
-                                              let progress_header_position = write_session_header(
-                                                  &mut output_file,
-                                                  &deck_name,
-                                                  cards.len(),
-                                              )?;
+                                            let session_id = match session::create_session(&conn, &deck_name, cards.len()) {
+                                                Ok(id) => id,
+                                                Err(e) => {
+                                                    eprintln!("Failed to create session: {}", e);
+                                                    return Ok(());
+                                                }
+                                            };
 
-                                              // Create async channels for this quiz session (buffered)
+                                            let flashcards_data: Vec<(String, String)> = cards.iter()
+                                                .map(|c| (c.question.clone(), c.answer.clone()))
+                                                .collect();
+
+                                            if let Err(e) = flashcard::initialize_flashcards(&conn, session_id, &flashcards_data) {
+                                                eprintln!("Failed to initialize flashcards: {}", e);
+                                                return Ok(());
+                                            }
+
+                                            // Create async channels for this quiz session (buffered)
                                             let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
                                             let (response_tx, response_rx) = mpsc::channel::<AiResponse>(32);
 
@@ -202,7 +202,7 @@ async fn main() -> io::Result<()> {
                                                 showing_answer: false,
                                                 input_buffer: String::new(),
                                                 cursor_position: 0,
-                                                output_file: Some(output_file),
+                                                session_id: Some(session_id),
                                                 questions_total,
                                                 questions_answered: 0,
                                                 ai_enabled,
@@ -212,7 +212,6 @@ async fn main() -> io::Result<()> {
                                                 last_ai_error: None,
                                                 ai_tx: if ai_enabled { Some(request_tx) } else { None },
                                                 ai_rx: if ai_enabled { Some(response_rx) } else { None },
-                                                progress_header_position,
                                                 input_scroll_y: 0,
                                             });
 
@@ -221,10 +220,6 @@ async fn main() -> io::Result<()> {
                                 }
                                 KeyCode::Char('m') => {
                                     app_state = AppState::Menu;
-                                    if let Some(mut session) = quiz_session.take()
-                                        && let Some(file) = session.output_file.take() {
-                                            drop(file);
-                                        }
                                     quiz_session = None;
                                 }
                                 KeyCode::Esc => break,
@@ -233,16 +228,12 @@ async fn main() -> io::Result<()> {
                             AppState::Quiz => {
                                 if let Some(session) = &mut quiz_session
                                     && let Err(e) = handle_quiz_input(session, key, &mut app_state) {
-                                        eprintln!("Error writing to quiz file: {}", e);
+                                        eprintln!("Error handling quiz input: {}", e);
                                     }
                             }
                             AppState::QuizQuitConfirm => match key.code {
                                 KeyCode::Char('y') => {
                                     app_state = AppState::Menu;
-                                    if let Some(mut session) = quiz_session.take()
-                                        && let Some(file) = session.output_file.take() {
-                                            drop(file);
-                                        }
                                     quiz_session = None;
                                 }
                                 KeyCode::Char('n') => {
@@ -253,10 +244,6 @@ async fn main() -> io::Result<()> {
                             AppState::Summary => match key.code {
                                 KeyCode::Char('m') => {
                                     app_state = AppState::Menu;
-                                    if let Some(mut session) = quiz_session.take()
-                                        && let Some(file) = session.output_file.take() {
-                                            drop(file);
-                                        }
                                     quiz_session = None;
                                 },
                                 KeyCode::Esc => break,

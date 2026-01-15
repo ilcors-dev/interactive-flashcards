@@ -16,6 +16,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 lazy_static = "1.4"
 unicode-width = "0.1"
 futures = "0.3"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 strip = true

@@ -19,7 +19,7 @@ pub struct QuizSession {
     pub showing_answer: bool,
     pub input_buffer: String,
     pub cursor_position: usize,
-    pub output_file: Option<std::fs::File>,
+    pub session_id: Option<u64>,
     pub questions_total: usize,
     pub questions_answered: usize,
     pub ai_enabled: bool,
@@ -29,8 +29,33 @@ pub struct QuizSession {
     pub last_ai_error: Option<String>,
     pub ai_tx: Option<mpsc::Sender<AiRequest>>,
     pub ai_rx: Option<mpsc::Receiver<AiResponse>>,
-    pub progress_header_position: u64,
     pub input_scroll_y: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionData {
+    pub id: u64,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub deck_name: String,
+    pub started_at: u64,
+    pub completed_at: Option<u64>,
+    pub questions_total: usize,
+    pub questions_answered: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct FlashcardData {
+    pub id: u64,
+    pub session_id: u64,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub question: String,
+    pub answer: String,
+    pub user_answer: Option<String>,
+    pub ai_feedback: Option<AIFeedback>,
+    pub answered_at: Option<u64>,
+    pub display_order: usize,
 }
 
 /// Async-safe wrapper for QuizSession using RwLock for concurrent access

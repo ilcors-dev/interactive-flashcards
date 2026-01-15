@@ -1,4 +1,4 @@
-use crate::file_io::{update_progress_header, write_question_entry};
+use crate::db::{self, flashcard, session};
 use crate::logger;
 use crate::models::{AiRequest, AiResponse, AppState, QuizSession};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -59,7 +59,6 @@ pub fn handle_quiz_input(
             }
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    // Insert newline for multi-line input
                     session.input_buffer.insert(session.cursor_position, '\n');
                     session.cursor_position += 1;
                     Ok(())
@@ -70,31 +69,35 @@ pub fn handle_quiz_input(
 
                     session.questions_answered += 1;
 
-                    if let Some(ref mut file) = session.output_file {
-                        if !session.ai_enabled {
-                            let q_num = session.current_index + 1;
-                            let question = &session.flashcards[session.current_index].question;
-                            let user_ans = &session.flashcards[session.current_index].user_answer;
-                            let correct_ans = &session.flashcards[session.current_index].answer;
+                    if let Some(session_id) = session.session_id {
+                        let conn = match db::init_db() {
+                            Ok(conn) => conn,
+                            Err(e) => {
+                                return Err(io::Error::other(format!("DB error: {}", e)));
+                            }
+                        };
 
-                            write_question_entry(
-                                file,
-                                q_num,
-                                question,
-                                user_ans,
-                                correct_ans,
-                                session.flashcards[session.current_index]
-                                    .ai_feedback
-                                    .as_ref(),
-                            )?;
-                            session.flashcards[session.current_index].written_to_file = true;
+                        let current_card = &session.flashcards[session.current_index];
+                        let user_answer = current_card.user_answer.as_deref().unwrap_or("");
+                        let ai_feedback = current_card.ai_feedback.as_ref();
+
+                        if let Err(e) = flashcard::save_answer(
+                            &conn,
+                            session_id,
+                            &current_card.question,
+                            &current_card.answer,
+                            user_answer,
+                            ai_feedback,
+                        ) {
+                            return Err(io::Error::other(format!("DB error: {}", e)));
                         }
-                        update_progress_header(
-                            file,
-                            session.progress_header_position,
-                            session.questions_answered,
-                            session.questions_total,
-                        )?;
+                        session.flashcards[session.current_index].written_to_file = true;
+
+                        if let Err(e) =
+                            session::update_progress(&conn, session_id, session.questions_answered)
+                        {
+                            return Err(io::Error::other(format!("DB error: {}", e)));
+                        }
                     }
 
                     session.last_ai_error = None;
@@ -326,25 +329,19 @@ impl QuizSession {
         self.flashcards[flashcard_index].ai_feedback = feedback;
 
         if !self.flashcards[flashcard_index].written_to_file
-            && let Some(ref mut file) = self.output_file {
-                let q_num = flashcard_index + 1;
-                let question = &self.flashcards[flashcard_index].question;
-                let user_ans = &self.flashcards[flashcard_index].user_answer;
-                let correct_ans = &self.flashcards[flashcard_index].answer;
+            && let Some(session_id) = self.session_id
+            && let Ok(ref conn) = db::init_db() {
+                let current_card = &self.flashcards[flashcard_index];
+                let user_answer = current_card.user_answer.as_deref().unwrap_or("");
+                let ai_feedback = current_card.ai_feedback.as_ref();
 
-                write_question_entry(
-                    file,
-                    q_num,
-                    question,
-                    user_ans,
-                    correct_ans,
-                    self.flashcards[flashcard_index].ai_feedback.as_ref(),
-                ).ok();
-                update_progress_header(
-                    file,
-                    self.progress_header_position,
-                    self.questions_answered,
-                    self.questions_total,
+                flashcard::save_answer(
+                    conn,
+                    session_id,
+                    &current_card.question,
+                    &current_card.answer,
+                    user_answer,
+                    ai_feedback,
                 ).ok();
                 self.flashcards[flashcard_index].written_to_file = true;
             }
@@ -495,7 +492,7 @@ mod tests {
             showing_answer: false,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -505,7 +502,6 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -548,7 +544,7 @@ mod tests {
             showing_answer: true, // Need to be showing answer for AI commands
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 1,
             ai_enabled: true,
@@ -558,7 +554,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -586,7 +582,7 @@ mod tests {
             showing_answer: true,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 1,
             ai_enabled: true,
@@ -596,7 +592,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -627,7 +623,7 @@ mod tests {
             showing_answer: false, // Need to be in input mode for typing
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: true,
@@ -637,7 +633,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -668,7 +664,7 @@ mod tests {
             showing_answer: true,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 1,
             ai_enabled: false, // AI disabled
@@ -678,7 +674,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -705,7 +701,7 @@ mod tests {
             showing_answer: true,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 1,
             ai_enabled: true,
@@ -715,7 +711,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -746,7 +742,7 @@ mod tests {
             showing_answer: false, // Need to be in input mode
             input_buffer: "Hello".to_string(),
             cursor_position: 5, // Start at end of "Hello"
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -756,7 +752,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -805,7 +801,7 @@ mod tests {
             showing_answer: false,
             input_buffer: "Helo".to_string(),
             cursor_position: 3, // Between 'e' and 'o'
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -815,7 +811,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -854,7 +850,7 @@ mod tests {
             showing_answer: false,
             input_buffer: "Hello World".to_string(),
             cursor_position: 5, // At space between "Hello" and "World"
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -864,7 +860,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -910,7 +906,7 @@ mod tests {
             showing_answer: false,
             input_buffer: "Hello".to_string(),
             cursor_position: 5,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -920,7 +916,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -953,7 +949,7 @@ mod tests {
             showing_answer: false,
             input_buffer: "Hello world".to_string(),
             cursor_position: 5, // After "Hello"
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -963,7 +959,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -995,7 +991,7 @@ mod tests {
             showing_answer: false,
             input_buffer: "Line 1\nLine 2\nLine 3".to_string(),
             cursor_position: 17,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -1005,7 +1001,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -1049,7 +1045,7 @@ mod tests {
             showing_answer: false,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 2,
             questions_answered: 0,
             ai_enabled: false,
@@ -1059,7 +1055,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -1097,7 +1093,7 @@ mod tests {
             showing_answer: false,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 0,
             ai_enabled: false,
@@ -1107,7 +1103,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
@@ -1186,7 +1182,7 @@ mod tests {
             showing_answer: true, // Start on answer screen of Q1
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 3,
             questions_answered: 2,
             ai_enabled: true,
@@ -1196,7 +1192,7 @@ mod tests {
             last_ai_error: None,
             ai_tx: Some(tx),
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;

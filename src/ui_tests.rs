@@ -236,7 +236,7 @@ mod ui_integration_tests {
             showing_answer: false,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 2,
             questions_answered: 0,
             ai_enabled: true,
@@ -246,7 +246,7 @@ mod ui_integration_tests {
             last_ai_error: None,
             ai_tx: None,
             ai_rx: None,
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         }
     }
@@ -293,7 +293,7 @@ mod ui_integration_tests {
             showing_answer: true,
             input_buffer: String::new(),
             cursor_position: 0,
-            output_file: None,
+            session_id: None,
             questions_total: 1,
             questions_answered: 1,
             ai_enabled: true,
@@ -303,7 +303,7 @@ mod ui_integration_tests {
             last_ai_error: None,
             ai_tx: Some(_request_tx),
             ai_rx: Some(response_rx),
-            progress_header_position: 0,
+
             input_scroll_y: 0,
         };
 
