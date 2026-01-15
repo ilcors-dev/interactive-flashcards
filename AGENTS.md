@@ -20,6 +20,9 @@ The CSV files contain pairs of questions (first column) and answers (second colu
   - The PROGRESS.md must reflect the current state of the implementation.
 - When writing code, do not add comments that do not add value. Prefer self-explanatory code over comments that do not add anything useful.
   - Only add comments where the code is complex or non-obvious or part of a choice that needs explanation
+- For sql:
+  - For every new change, create a new migration file as the migrations are handled by `refinery` dependency.
+  - Always include `created_at` and `updated_at` timestamp fields in every table, at the end of the table definition. Add default values for them.
 
 ## Plan Mode
 
