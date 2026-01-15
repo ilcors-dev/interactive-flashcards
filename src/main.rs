@@ -17,10 +17,12 @@ use tokio::sync::mpsc;
 use tokio::time::{self, Duration};
 
 use interactive_flashcards::{
-    ai_worker, draw_menu, draw_quit_confirmation, draw_quiz, draw_summary, get_csv_files,
-    handle_quiz_input, load_csv, logger,
+    ai_worker,
+    db::session::SessionSummary,
+    draw_menu, draw_quit_confirmation, draw_quiz, draw_summary, get_csv_files, handle_quiz_input,
+    load_csv, logger,
     models::{
-        AiRequest, AiResponse, AppState, QuizSession, UiMenuState, UiQuizState, UiState,
+        AiRequest, AiResponse, AppState, Flashcard, QuizSession, UiMenuState, UiQuizState, UiState,
         UiStateTypes,
     },
 };
@@ -48,6 +50,17 @@ async fn main() -> io::Result<()> {
     let mut quiz_session: Option<QuizSession> = None;
     let ai_enabled = std::env::var("OPENROUTER_API_KEY").is_ok();
 
+    // Session history state - load at startup
+    let mut sessions: Vec<SessionSummary> = Vec::new();
+    let mut selected_session_index: usize = 0;
+    let mut focused_panel: usize = 0; // 0 = CSV, 1 = Sessions
+    let mut _delete_confirm: bool = false;
+
+    // Load sessions at startup
+    if let Ok(conn) = db::init_db() {
+        sessions = session::list_sessions(&conn).unwrap_or_default();
+    }
+
     // Create async event stream and timeout timer for event-driven architecture
     let mut event_stream = EventStream::new();
     let mut ai_timeout_interval = time::interval(Duration::from_secs(30));
@@ -66,6 +79,9 @@ async fn main() -> io::Result<()> {
                 app_state: AppState::Menu,
                 current: Some(UiStateTypes::Menu(UiMenuState {
                     selected_file_index,
+                    selected_session_index,
+                    focused_panel,
+                    sessions_count: sessions.len(),
                 })),
             },
             AppState::Quiz => {
@@ -112,7 +128,15 @@ async fn main() -> io::Result<()> {
 
         if should_draw {
             terminal.draw(|f| match app_state {
-                AppState::Menu => draw_menu(f, &csv_files, selected_file_index, ai_enabled),
+                AppState::Menu => draw_menu(
+                    f,
+                    &csv_files,
+                    selected_file_index,
+                    &sessions,
+                    selected_session_index,
+                    focused_panel,
+                    ai_enabled,
+                ),
                 AppState::Quiz => {
                     if let Some(ref mut session) = quiz_session {
                         // Draw the quiz with current state (AI responses handled asynchronously)
@@ -143,17 +167,33 @@ async fn main() -> io::Result<()> {
                         }
                         match app_state {
                             AppState::Menu => match key.code {
+                                KeyCode::Char('1') => {
+                                    focused_panel = 0;
+                                }
+                                KeyCode::Char('2') => {
+                                    focused_panel = 1;
+                                }
                                 KeyCode::Up => {
-                                    selected_file_index = selected_file_index.saturating_sub(1);
+                                    if focused_panel == 0 {
+                                        selected_file_index = selected_file_index.saturating_sub(1);
+                                    } else {
+                                        selected_session_index = selected_session_index.saturating_sub(1);
+                                    }
                                 }
                                 KeyCode::Down => {
-                                    if selected_file_index < csv_files.len().saturating_sub(1) {
-                                        selected_file_index += 1;
+                                    if focused_panel == 0 {
+                                        if selected_file_index < csv_files.len().saturating_sub(1) {
+                                            selected_file_index += 1;
+                                        }
+                                    } else if !sessions.is_empty() && selected_session_index < sessions.len().saturating_sub(1) {
+                                        selected_session_index += 1;
                                     }
                                 }
                                 KeyCode::Enter => {
-                                    if !csv_files.is_empty()
-                                        && let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
+                                    if focused_panel == 0 {
+                                        // CSV panel - start new quiz
+                                        if !csv_files.is_empty()
+                                            && let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
                                             let deck_name = csv_files[selected_file_index]
                                                 .file_stem().map(|s| s.to_string_lossy().to_string())
                                                 .unwrap_or_else(|| "unknown_deck".to_string());
@@ -217,10 +257,73 @@ async fn main() -> io::Result<()> {
 
                                             app_state = AppState::Quiz;
                                         }
-                                }
-                                KeyCode::Char('m') => {
-                                    app_state = AppState::Menu;
-                                    quiz_session = None;
+                                    } else {
+                                        // Sessions panel - resume session
+                                        if !sessions.is_empty() && selected_session_index < sessions.len() {
+                                            let session_id = sessions[selected_session_index].id;
+                                            if let Ok(conn) = db::init_db()
+                                                 && let Ok(Some((session_data, flashcards_data))) = session::get_session_detail(&conn, session_id) {
+                                                let cards: Vec<Flashcard> = flashcards_data
+                                                    .into_iter()
+                                                    .map(|fc| Flashcard {
+                                                        question: fc.question,
+                                                        answer: fc.answer,
+                                                        user_answer: fc.user_answer,
+                                                        ai_feedback: fc.ai_feedback,
+                                                        written_to_file: true,
+                                                    })
+                                                    .collect();
+
+                                                let mut resume_index = 0;
+                                                let mut showing_answer = false;
+                                                let mut input_buffer = String::new();
+                                                let mut cursor_position = 0;
+                                                for (i, card) in cards.iter().enumerate() {
+                                                    if card.user_answer.is_none() {
+                                                        resume_index = i;
+                                                        break;
+                                                    }
+                                                    resume_index = i;
+                                                }
+                                                if resume_index < cards.len() {
+                                                    showing_answer = cards[resume_index].user_answer.is_some();
+                                                    if showing_answer {
+                                                        input_buffer = cards[resume_index].user_answer.clone().unwrap_or_default();
+                                                        cursor_position = input_buffer.len();
+                                                    }
+                                                }
+
+                                                let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
+                                                let (response_tx, response_rx) = mpsc::channel::<AiResponse>(32);
+
+                                                if ai_enabled {
+                                                    let _ai_handle = ai_worker::spawn_ai_worker(response_tx, request_rx);
+                                                }
+
+                                                quiz_session = Some(QuizSession {
+                                                    flashcards: cards,
+                                                    current_index: resume_index,
+                                                    deck_name: session_data.deck_name,
+                                                    showing_answer,
+                                                    input_buffer,
+                                                    cursor_position,
+                                                    session_id: Some(session_id),
+                                                    questions_total: session_data.questions_total,
+                                                    questions_answered: session_data.questions_answered,
+                                                    ai_enabled,
+                                                    ai_evaluation_in_progress: false,
+                                                    ai_last_evaluated_index: None,
+                                                    ai_evaluation_start_time: None,
+                                                    last_ai_error: None,
+                                                    ai_tx: if ai_enabled { Some(request_tx) } else { None },
+                                                    ai_rx: if ai_enabled { Some(response_rx) } else { None },
+                                                    input_scroll_y: 0,
+                                                });
+
+                                                app_state = AppState::Quiz;
+                                            }
+                                        }
+                                    }
                                 }
                                 KeyCode::Esc => break,
                                 _ => {}
@@ -235,6 +338,10 @@ async fn main() -> io::Result<()> {
                                 KeyCode::Char('y') => {
                                     app_state = AppState::Menu;
                                     quiz_session = None;
+                                    // Refresh sessions list
+                                    if let Ok(conn) = db::init_db() {
+                                        sessions = session::list_sessions(&conn).unwrap_or_default();
+                                    }
                                 }
                                 KeyCode::Char('n') => {
                                     app_state = AppState::Quiz;
@@ -245,6 +352,10 @@ async fn main() -> io::Result<()> {
                                 KeyCode::Char('m') => {
                                     app_state = AppState::Menu;
                                     quiz_session = None;
+                                    // Refresh sessions list
+                                    if let Ok(conn) = db::init_db() {
+                                        sessions = session::list_sessions(&conn).unwrap_or_default();
+                                    }
                                 },
                                 KeyCode::Esc => break,
                                 _ => {}

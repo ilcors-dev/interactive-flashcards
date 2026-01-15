@@ -767,6 +767,7 @@ name = "interactive-flashcards"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "crossbeam-channel",
  "crossterm",
  "futures",

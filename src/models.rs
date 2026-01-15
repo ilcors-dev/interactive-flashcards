@@ -145,6 +145,9 @@ pub enum UiStateTypes {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiMenuState {
     pub selected_file_index: usize,
+    pub selected_session_index: usize,
+    pub focused_panel: usize, // 0 = CSV, 1 = Sessions
+    pub sessions_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]

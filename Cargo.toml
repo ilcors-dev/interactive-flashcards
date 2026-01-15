@@ -18,6 +18,7 @@ unicode-width = "0.1"
 futures = "0.3"
 rusqlite = { version = "0.31", features = ["bundled"] }
 refinery = { version = "0.9", features = ["rusqlite", "rusqlite-bundled"] }
+chrono = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
