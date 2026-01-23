@@ -56,6 +56,7 @@ IMPORTANT:
     "suggestions": ["suggestion1", "suggestion2"]
 }}
 - Do not account for minor typos in the user's answer when determining correctness.
+- Do not penalize long answers; evaluate based on content accuracy and completeness.
 "#,
             question, correct_answer, user_answer
         );
