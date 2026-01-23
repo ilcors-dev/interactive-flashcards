@@ -114,6 +114,23 @@ pub fn load_flashcards(conn: &Connection, session_id: u64) -> Result<Vec<Flashca
     Ok(flashcards)
 }
 
+pub fn update_ai_feedback(
+    conn: &Connection,
+    flashcard_id: u64,
+    ai_feedback: &AIFeedback,
+) -> Result<()> {
+    let updated_at = now();
+    let ai_feedback_json = serde_json::to_string(ai_feedback)
+        .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+
+    conn.execute(
+        "UPDATE flashcards SET ai_feedback = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![ai_feedback_json, updated_at, flashcard_id],
+    )?;
+
+    Ok(())
+}
+
 pub fn get_answer_count(conn: &Connection, session_id: u64) -> Result<usize> {
     let count: usize = conn.query_row(
         "SELECT COUNT(*) FROM flashcards WHERE session_id = ? AND user_answer IS NOT NULL",
@@ -186,6 +203,195 @@ mod tests {
         let loaded = load_flashcards(&conn, session_id).unwrap();
         assert!(loaded[0].ai_feedback.is_some());
         assert_eq!(loaded[0].ai_feedback.clone().unwrap().is_correct, true);
+    }
+
+    #[test]
+    fn test_update_ai_feedback() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
+
+        let session_id = create_session(&conn, "Test Deck", 1).unwrap();
+
+        let flashcards = vec![("Q1".to_string(), "A1".to_string())];
+        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+
+        // Save initial answer without AI feedback
+        save_answer(&conn, session_id, "Q1", "A1", "My Answer", None).unwrap();
+
+        let loaded = load_flashcards(&conn, session_id).unwrap();
+        let flashcard_id = loaded[0].id;
+        assert!(loaded[0].ai_feedback.is_none());
+
+        // Update with AI feedback
+        let ai_feedback = AIFeedback {
+            is_correct: true,
+            correctness_score: 0.85,
+            corrections: vec!["Minor correction".to_string()],
+            explanation: "Good answer!".to_string(),
+            suggestions: vec!["Keep it up!".to_string()],
+        };
+
+        update_ai_feedback(&conn, flashcard_id, &ai_feedback).unwrap();
+
+        let loaded_after_update = load_flashcards(&conn, session_id).unwrap();
+        assert!(loaded_after_update[0].ai_feedback.is_some());
+
+        let saved_feedback = loaded_after_update[0].ai_feedback.as_ref().unwrap();
+        assert_eq!(saved_feedback.is_correct, true);
+        assert_eq!(saved_feedback.correctness_score, 0.85);
+        assert_eq!(
+            saved_feedback.corrections,
+            vec!["Minor correction".to_string()]
+        );
+        assert_eq!(saved_feedback.explanation, "Good answer!");
+        assert_eq!(saved_feedback.suggestions, vec!["Keep it up!".to_string()]);
+    }
+
+    #[test]
+    fn test_update_ai_feedback_invalid_id() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
+
+        let ai_feedback = AIFeedback {
+            is_correct: true,
+            correctness_score: 1.0,
+            corrections: vec![],
+            explanation: "Test".to_string(),
+            suggestions: vec![],
+        };
+
+        // Should not panic or find any record to update
+        let result = update_ai_feedback(&conn, 999, &ai_feedback);
+        assert!(result.is_ok()); // SQLite UPDATE with no matching rows returns Ok
+    }
+
+    #[test]
+    fn test_complete_ai_feedback_cycle() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
+
+        let session_id = create_session(&conn, "Test Deck", 2).unwrap();
+
+        // Initialize 2 flashcards
+        let flashcards = vec![
+            ("Question 1".to_string(), "Answer 1".to_string()),
+            ("Question 2".to_string(), "Answer 2".to_string()),
+        ];
+        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+
+        // Simulate answering first question without AI feedback initially
+        save_answer(
+            &conn,
+            session_id,
+            "Question 1",
+            "Answer 1",
+            "User Answer 1",
+            None,
+        )
+        .unwrap();
+
+        let loaded_after_answer = load_flashcards(&conn, session_id).unwrap();
+        assert_eq!(
+            loaded_after_answer[0].user_answer,
+            Some("User Answer 1".to_string())
+        );
+        assert!(loaded_after_answer[0].ai_feedback.is_none());
+        assert!(loaded_after_answer[1].user_answer.is_none());
+
+        // Simulate AI evaluation completing and updating the flashcard
+        let ai_feedback = AIFeedback {
+            is_correct: false,
+            correctness_score: 0.60,
+            corrections: vec!["Better answer would be...".to_string()],
+            explanation: "Partially correct".to_string(),
+            suggestions: vec!["Study more".to_string()],
+        };
+
+        let flashcard_id = loaded_after_answer[0].id;
+        update_ai_feedback(&conn, flashcard_id, &ai_feedback).unwrap();
+
+        // Load again and verify AI feedback is now present
+        let loaded_after_ai = load_flashcards(&conn, session_id).unwrap();
+
+        // First flashcard should have both answer and AI feedback
+        assert_eq!(
+            loaded_after_ai[0].user_answer,
+            Some("User Answer 1".to_string())
+        );
+        assert!(loaded_after_ai[0].ai_feedback.is_some());
+
+        let saved_feedback = loaded_after_ai[0].ai_feedback.as_ref().unwrap();
+        assert_eq!(saved_feedback.is_correct, false);
+        assert_eq!(saved_feedback.correctness_score, 0.60);
+        assert_eq!(
+            saved_feedback.corrections,
+            vec!["Better answer would be...".to_string()]
+        );
+        assert_eq!(saved_feedback.explanation, "Partially correct");
+        assert_eq!(saved_feedback.suggestions, vec!["Study more"]);
+
+        // Second flashcard should remain unanswered
+        assert!(loaded_after_ai[1].user_answer.is_none());
+        assert!(loaded_after_ai[1].ai_feedback.is_none());
+
+        // Answer second question with AI feedback from the start
+        let ai_feedback_2 = AIFeedback {
+            is_correct: true,
+            correctness_score: 1.0,
+            corrections: vec![],
+            explanation: "Perfect!".to_string(),
+            suggestions: vec!["Great work".to_string()],
+        };
+
+        save_answer(
+            &conn,
+            session_id,
+            "Question 2",
+            "Answer 2",
+            "User Answer 2",
+            Some(&ai_feedback_2),
+        )
+        .unwrap();
+
+        // Final verification
+        let final_loaded = load_flashcards(&conn, session_id).unwrap();
+        assert_eq!(final_loaded.len(), 2);
+
+        // First flashcard: answer + later AI update
+        assert_eq!(
+            final_loaded[0].user_answer,
+            Some("User Answer 1".to_string())
+        );
+        assert!(final_loaded[0].ai_feedback.is_some());
+        assert_eq!(
+            final_loaded[0]
+                .ai_feedback
+                .as_ref()
+                .unwrap()
+                .correctness_score,
+            0.60
+        );
+
+        // Second flashcard: answer + immediate AI feedback
+        assert_eq!(
+            final_loaded[1].user_answer,
+            Some("User Answer 2".to_string())
+        );
+        assert!(final_loaded[1].ai_feedback.is_some());
+        assert_eq!(
+            final_loaded[1]
+                .ai_feedback
+                .as_ref()
+                .unwrap()
+                .correctness_score,
+            1.0
+        );
     }
 
     #[test]

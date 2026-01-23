@@ -350,22 +350,34 @@ impl QuizSession {
         };
         self.flashcards[flashcard_index].ai_feedback = feedback;
 
-        if !self.flashcards[flashcard_index].written_to_file
-            && let Some(session_id) = self.session_id
+        if let Some(session_id) = self.session_id
             && let Ok(ref conn) = db::init_db() {
-                let current_card = &self.flashcards[flashcard_index];
-                let user_answer = current_card.user_answer.as_deref().unwrap_or("");
-                let ai_feedback = current_card.ai_feedback.as_ref();
+            if let Some(flashcard_id) = self.flashcards[flashcard_index].id {
+                    if let Some(ai_feedback) = &self.flashcards[flashcard_index].ai_feedback {
+                        crate::db::flashcard::update_ai_feedback(conn, flashcard_id, ai_feedback)
+                            .unwrap_or_else(|e| {
+                                crate::logger::log(&format!(
+                                    "Failed to update AI feedback for flashcard {}: {}",
+                                    flashcard_id, e
+                                ));
+                            });
+                    }
+                } else if !self.flashcards[flashcard_index].written_to_file {
+                    // New flashcard - save answer with AI feedback
+                    let current_card = &self.flashcards[flashcard_index];
+                    let user_answer = current_card.user_answer.as_deref().unwrap_or("");
+                    let ai_feedback = current_card.ai_feedback.as_ref();
 
-                flashcard::save_answer(
-                    conn,
-                    session_id,
-                    &current_card.question,
-                    &current_card.answer,
-                    user_answer,
-                    ai_feedback,
-                ).ok();
-                self.flashcards[flashcard_index].written_to_file = true;
+                    flashcard::save_answer(
+                        conn,
+                        session_id,
+                        &current_card.question,
+                        &current_card.answer,
+                        user_answer,
+                        ai_feedback,
+                    ).ok();
+                    self.flashcards[flashcard_index].written_to_file = true;
+                }
             }
     }
 }
@@ -508,6 +520,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -563,6 +576,7 @@ mod tests {
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -604,6 +618,7 @@ mod tests {
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -648,6 +663,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -692,6 +708,7 @@ mod tests {
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -732,6 +749,7 @@ mod tests {
                 user_answer: Some("test answer".to_string()),
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -776,6 +794,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -838,6 +857,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -890,6 +910,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -949,6 +970,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -995,6 +1017,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -1040,6 +1063,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -1089,6 +1113,7 @@ mod tests {
                     user_answer: Some("Answer1".to_string()),
                     ai_feedback: None,
                     written_to_file: false,
+                    id: None,
                 },
                 Flashcard {
                     question: "Q2?".to_string(),
@@ -1096,6 +1121,7 @@ mod tests {
                     user_answer: Some("Answer2".to_string()),
                     ai_feedback: None,
                     written_to_file: false,
+                    id: None,
                 },
             ],
             current_index: 0,
@@ -1148,6 +1174,7 @@ mod tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Test".to_string(),
@@ -1219,6 +1246,7 @@ mod tests {
                         suggestions: vec![],
                     }),
                     written_to_file: false,
+                    id: None,
                 },
                 Flashcard {
                     question: "Q2?".to_string(),
@@ -1226,6 +1254,7 @@ mod tests {
                     user_answer: None, // Unanswered
                     ai_feedback: None,
                     written_to_file: false,
+                    id: None,
                 },
                 Flashcard {
                     question: "Q3?".to_string(),
@@ -1239,6 +1268,7 @@ mod tests {
                         suggestions: vec!["Suggestion".to_string()],
                     }),
                     written_to_file: false,
+                    id: None,
                 },
             ],
             current_index: 0,

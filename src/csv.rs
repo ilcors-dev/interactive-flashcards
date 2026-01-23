@@ -32,7 +32,8 @@ pub fn load_csv(path: &PathBuf) -> std::io::Result<Vec<Flashcard>> {
                     answer,
                     user_answer: None,
                     ai_feedback: None,
-                written_to_file: false,
+                    written_to_file: false,
+                    id: None,
                 });
             }
     }
@@ -229,6 +230,7 @@ mod tests {
                         user_answer: None,
                         ai_feedback: None,
                         written_to_file: false,
+                        id: None,
                     });
                 }
             }
@@ -254,6 +256,7 @@ mod tests {
                         user_answer: None,
                         ai_feedback: None,
                         written_to_file: false,
+                        id: None,
                     });
                 }
             }

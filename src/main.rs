@@ -321,6 +321,7 @@ async fn main() -> io::Result<()> {
                                                         user_answer: fc.user_answer,
                                                         ai_feedback: fc.ai_feedback,
                                                         written_to_file: true,
+                                                        id: Some(fc.id),
                                                     })
                                                     .collect();
 

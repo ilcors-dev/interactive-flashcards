@@ -219,6 +219,7 @@ mod ui_integration_tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             },
             Flashcard {
                 question: "Test Question 2?".to_string(),
@@ -226,6 +227,7 @@ mod ui_integration_tests {
                 user_answer: None,
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             },
         ];
 
@@ -290,6 +292,7 @@ mod ui_integration_tests {
                 user_answer: Some("User async".to_string()),
                 ai_feedback: None,
                 written_to_file: false,
+                id: None,
             }],
             current_index: 0,
             deck_name: "Async Test".to_string(),

@@ -10,6 +10,7 @@ pub struct Flashcard {
     pub user_answer: Option<String>,
     pub ai_feedback: Option<AIFeedback>,
     pub written_to_file: bool,
+    pub id: Option<u64>,
 }
 
 #[derive(Debug)]
