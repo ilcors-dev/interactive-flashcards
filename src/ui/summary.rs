@@ -1,5 +1,5 @@
 use crate::models::QuizSession;
-use crate::utils::truncate_string;
+use crate::utils::{render_markdown_truncated, truncate_string};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -132,10 +132,8 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )]));
-        assessment_text.push_line(Line::from(truncate_string(
-            &assessment.overall_feedback,
-            56,
-        )));
+        let rendered_feedback = render_markdown_truncated(&assessment.overall_feedback, 56);
+        assessment_text.extend(rendered_feedback);
         assessment_text.push_line(Line::from(""));
 
         if !assessment.strengths.is_empty() {

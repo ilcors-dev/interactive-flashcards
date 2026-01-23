@@ -1,4 +1,5 @@
 use crate::models::QuizSession;
+use crate::utils::render_markdown;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -99,7 +100,8 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
 
             text.push_line(Line::from(""));
             text.push_line(Line::from("Explanation:"));
-            text.push_line(Line::from(feedback.explanation.as_str()));
+            let rendered_explanation = render_markdown(&feedback.explanation);
+            text.extend(rendered_explanation);
 
             if !feedback.suggestions.is_empty() {
                 text.push_line(Line::from(""));
