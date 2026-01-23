@@ -133,21 +133,131 @@ pub fn get_session_detail(
 
 pub fn delete_session(conn: &Connection, session_id: u64) -> Result<()> {
     conn.execute("DELETE FROM flashcards WHERE session_id = ?", [session_id])?;
+    conn.execute(
+        "DELETE FROM session_assessments WHERE session_id = ?",
+        [session_id],
+    )?;
     conn.execute("DELETE FROM sessions WHERE id = ?", [session_id])?;
     Ok(())
+}
+
+pub fn save_session_assessment(
+    conn: &Connection,
+    session_id: u64,
+    assessment: &crate::models::SessionAssessment,
+) -> Result<()> {
+    let created_at = now();
+    let suggestions = serde_json::to_string(&assessment.suggestions).unwrap_or_default();
+    let strengths = serde_json::to_string(&assessment.strengths).unwrap_or_default();
+    let weaknesses = serde_json::to_string(&assessment.weaknesses).unwrap_or_default();
+
+    conn.execute(
+        "INSERT OR REPLACE INTO session_assessments
+         (session_id, grade_percentage, mastery_level, overall_feedback, suggestions, strengths, weaknesses, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![
+            session_id,
+            assessment.grade_percentage,
+            assessment.mastery_level,
+            assessment.overall_feedback,
+            suggestions,
+            strengths,
+            weaknesses,
+            created_at,
+        ],
+    )?;
+
+    Ok(())
+}
+
+pub fn get_session_assessment(
+    conn: &Connection,
+    session_id: u64,
+) -> Result<Option<crate::models::SessionAssessment>> {
+    let mut stmt = conn.prepare(
+        "SELECT grade_percentage, mastery_level, overall_feedback, suggestions, strengths, weaknesses
+         FROM session_assessments WHERE session_id = ?",
+    )?;
+
+    stmt.query_row([session_id], |row| {
+        let suggestions_json: String = row.get(3)?;
+        let strengths_json: String = row.get(4)?;
+        let weaknesses_json: String = row.get(5)?;
+
+        let suggestions: Vec<String> = serde_json::from_str(&suggestions_json).unwrap_or_default();
+        let strengths: Vec<String> = serde_json::from_str(&strengths_json).unwrap_or_default();
+        let weaknesses: Vec<String> = serde_json::from_str(&weaknesses_json).unwrap_or_default();
+
+        Ok(crate::models::SessionAssessment {
+            grade_percentage: row.get(0)?,
+            mastery_level: row.get(1)?,
+            overall_feedback: row.get(2)?,
+            suggestions,
+            strengths,
+            weaknesses,
+        })
+    })
+    .map(Some)
+    .or(Ok(None))
+}
+
+pub fn get_session_comparison(
+    conn: &Connection,
+    deck_name: &str,
+) -> Result<Option<crate::models::SessionComparison>> {
+    let mut stmt = conn.prepare(
+        "SELECT grade_percentage FROM session_assessments sa
+         JOIN sessions s ON s.id = sa.session_id
+         WHERE s.deck_name = ?
+         ORDER BY sa.created_at DESC",
+    )?;
+
+    let grades: Vec<f32> = stmt
+        .query_map([deck_name], |row| row.get(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if grades.is_empty() {
+        return Ok(None);
+    }
+
+    let current_grade = grades[0];
+    let previous_sessions = grades.len() - 1;
+    let avg_grade: f32 = grades.iter().sum::<f32>() / grades.len() as f32;
+    let improvement_from_avg = current_grade - avg_grade;
+
+    let trend = if previous_sessions >= 2 {
+        let recent_avg: f32 = grades[..2].iter().sum::<f32>() / 2.0;
+        let older_avg: f32 = grades[2..].iter().sum::<f32>() / (grades.len() - 2) as f32;
+        if recent_avg > older_avg + 5.0 {
+            "improving".to_string()
+        } else if recent_avg + 5.0 < older_avg {
+            "declining".to_string()
+        } else {
+            "stable".to_string()
+        }
+    } else {
+        "stable".to_string()
+    };
+
+    Ok(Some(crate::models::SessionComparison {
+        previous_sessions,
+        improvement_from_avg,
+        trend,
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::run_migrations;
+    use crate::db::run_migrations_for_test;
 
     #[test]
     fn test_create_and_get_session() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
         let mut conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&mut conn).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         assert_eq!(session_id, 1);
@@ -164,7 +274,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
         let mut conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&mut conn).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         update_progress(&conn, session_id, 5).unwrap();
@@ -178,7 +288,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
         let mut conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&mut conn).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         complete_session(&conn, session_id).unwrap();
@@ -192,7 +302,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
         let mut conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&mut conn).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
 
         let session = get_session(&conn, 999).unwrap();
         assert!(session.is_none());
@@ -203,7 +313,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
         let mut conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&mut conn).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
 
         create_session(&conn, "Deck1", 10).unwrap();
         create_session(&conn, "Deck2", 5).unwrap();
@@ -223,7 +333,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
         let mut conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&mut conn).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 3).unwrap();
         let flashcards = vec![
@@ -242,7 +352,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_db_path = temp_dir.path().join("test.db");
         let mut conn = Connection::open(&test_db_path).unwrap();
-        run_migrations(&mut conn).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
         assert!(session_exists(&conn, session_id));
@@ -252,5 +362,107 @@ mod tests {
 
         let sessions = list_sessions(&conn).unwrap();
         assert_eq!(sessions.len(), 0);
+    }
+
+    #[test]
+    fn test_save_and_get_session_assessment() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        let session_id = create_session(&conn, "Test Deck", 10).unwrap();
+
+        let assessment = crate::models::SessionAssessment {
+            grade_percentage: 85.0,
+            mastery_level: "Intermediate".to_string(),
+            overall_feedback: "Great progress!".to_string(),
+            suggestions: vec!["Review chapter 3".to_string(), "Practice more".to_string()],
+            strengths: vec!["Core concepts".to_string()],
+            weaknesses: vec!["Application questions".to_string()],
+        };
+
+        save_session_assessment(&conn, session_id, &assessment).unwrap();
+
+        let retrieved = get_session_assessment(&conn, session_id).unwrap().unwrap();
+        assert_eq!(retrieved.grade_percentage, 85.0);
+        assert_eq!(retrieved.mastery_level, "Intermediate");
+        assert_eq!(retrieved.suggestions.len(), 2);
+        assert_eq!(retrieved.strengths.len(), 1);
+        assert_eq!(retrieved.weaknesses.len(), 1);
+    }
+
+    #[test]
+    fn test_get_nonexistent_assessment() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        let result = get_session_assessment(&conn, 999).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_session_comparison() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        // Create sessions for the same deck
+        let session_id1 = create_session(&conn, "Test Deck", 10).unwrap();
+        let assessment1 = crate::models::SessionAssessment {
+            grade_percentage: 70.0,
+            mastery_level: "Intermediate".to_string(),
+            overall_feedback: "First session".to_string(),
+            suggestions: vec![],
+            strengths: vec![],
+            weaknesses: vec![],
+        };
+        save_session_assessment(&conn, session_id1, &assessment1).unwrap();
+
+        let session_id2 = create_session(&conn, "Test Deck", 10).unwrap();
+        let assessment2 = crate::models::SessionAssessment {
+            grade_percentage: 80.0,
+            mastery_level: "Intermediate".to_string(),
+            overall_feedback: "Second session".to_string(),
+            suggestions: vec![],
+            strengths: vec![],
+            weaknesses: vec![],
+        };
+        save_session_assessment(&conn, session_id2, &assessment2).unwrap();
+
+        let comparison = get_session_comparison(&conn, "Test Deck").unwrap().unwrap();
+        assert_eq!(comparison.previous_sessions, 1);
+        assert!(
+            comparison.improvement_from_avg >= -10.0 && comparison.improvement_from_avg <= 10.0
+        );
+        assert_eq!(comparison.trend, "stable");
+    }
+
+    #[test]
+    fn test_delete_session_removes_assessment() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        let session_id = create_session(&conn, "Test Deck", 10).unwrap();
+        let assessment = crate::models::SessionAssessment {
+            grade_percentage: 85.0,
+            mastery_level: "Intermediate".to_string(),
+            overall_feedback: "Test".to_string(),
+            suggestions: vec![],
+            strengths: vec![],
+            weaknesses: vec![],
+        };
+        save_session_assessment(&conn, session_id, &assessment).unwrap();
+
+        assert!(get_session_assessment(&conn, session_id).unwrap().is_some());
+
+        delete_session(&conn, session_id).unwrap();
+
+        assert!(get_session_assessment(&conn, session_id).unwrap().is_none());
     }
 }

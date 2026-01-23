@@ -1,4 +1,5 @@
 use crate::ai::client::OpenRouterClient;
+use crate::models::SessionAssessment;
 use serde::{Deserialize, Serialize};
 
 fn clean_json_response(response: &str) -> String {
@@ -17,6 +18,35 @@ fn clean_json_response(response: &str) -> String {
         }
 
     cleaned.trim().to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SessionAssessmentRaw {
+    grade_percentage: f32,
+    mastery_level: String,
+    overall_feedback: String,
+    suggestions: Vec<String>,
+    strengths: Vec<String>,
+    weaknesses: Vec<String>,
+}
+
+pub fn parse_session_assessment(response: &str) -> Result<SessionAssessment, String> {
+    let cleaned = clean_json_response(response);
+    let raw: SessionAssessmentRaw = serde_json::from_str(&cleaned).map_err(|e| {
+        format!(
+            "Failed to parse session assessment: {}\nRaw: {}\nCleaned: {}",
+            e, response, cleaned
+        )
+    })?;
+
+    Ok(SessionAssessment {
+        grade_percentage: raw.grade_percentage,
+        mastery_level: raw.mastery_level,
+        overall_feedback: raw.overall_feedback,
+        suggestions: raw.suggestions,
+        strengths: raw.strengths,
+        weaknesses: raw.weaknesses,
+    })
 }
 
 /// AI feedback for flashcard answers
@@ -210,5 +240,45 @@ mod tests {
 
         let result: Result<AIFeedback, _> = serde_json::from_str(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_session_assessment() {
+        let json = r#"{
+            "grade_percentage": 85.0,
+            "mastery_level": "Intermediate",
+            "overall_feedback": "Great progress on the fundamentals.",
+            "suggestions": ["Review chapter 3", "Practice more examples"],
+            "strengths": ["Core concepts", "Terminology"],
+            "weaknesses": ["Application questions"]
+        }"#;
+
+        let result = parse_session_assessment(json);
+        assert!(result.is_ok());
+        let assessment = result.unwrap();
+        assert_eq!(assessment.grade_percentage, 85.0);
+        assert_eq!(assessment.mastery_level, "Intermediate");
+        assert!(assessment.suggestions.len() == 2);
+        assert!(assessment.strengths.len() == 2);
+        assert!(assessment.weaknesses.len() == 1);
+    }
+
+    #[test]
+    fn test_parse_session_assessment_with_markdown() {
+        let json = r#"```json
+{
+    "grade_percentage": 70.5,
+    "mastery_level": "Intermediate",
+    "overall_feedback": "Good effort.",
+    "suggestions": ["Keep practicing"],
+    "strengths": ["Good start"],
+    "weaknesses": ["Need more review"]
+}
+```"#;
+
+        let result = parse_session_assessment(json);
+        assert!(result.is_ok());
+        let assessment = result.unwrap();
+        assert_eq!(assessment.grade_percentage, 70.5);
     }
 }

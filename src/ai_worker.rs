@@ -74,6 +74,65 @@ pub fn spawn_ai_worker(
                         }
                     }
                 }
+                AiRequest::EvaluateSession {
+                    session_id,
+                    deck_name,
+                    flashcards,
+                } => {
+                    logger::log(&format!(
+                        "Worker received session assessment request for session {}",
+                        session_id
+                    ));
+
+                    let client = match OpenRouterClient::new() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            let _ = ai_tx
+                                .send(AiResponse::SessionAssessment {
+                                    session_id,
+                                    result: Err(format!("Failed to create AI client: {}", e)),
+                                })
+                                .await;
+                            continue;
+                        }
+                    };
+
+                    let evaluation_future = client.evaluate_session(&deck_name, &flashcards, None);
+
+                    match timeout(Duration::from_secs(60), evaluation_future).await {
+                        Ok(Ok(eval_result)) => {
+                            logger::log("Worker sending session assessment success");
+                            let assessment = crate::ai::parse_session_assessment(&eval_result);
+                            let _ = ai_tx
+                                .send(AiResponse::SessionAssessment {
+                                    session_id,
+                                    result: assessment,
+                                })
+                                .await;
+                        }
+                        Ok(Err(e)) => {
+                            logger::log(&format!("Worker session assessment error: {}", e));
+                            let full_error = format!("Session assessment failed: {}", e);
+                            let _ = ai_tx
+                                .send(AiResponse::SessionAssessment {
+                                    session_id,
+                                    result: Err(full_error),
+                                })
+                                .await;
+                        }
+                        Err(_) => {
+                            logger::log("Worker session assessment timeout error");
+                            let timeout_error =
+                                "Session assessment timed out after 60 seconds".to_string();
+                            let _ = ai_tx
+                                .send(AiResponse::SessionAssessment {
+                                    session_id,
+                                    result: Err(timeout_error),
+                                })
+                                .await;
+                        }
+                    }
+                }
             }
         }
         logger::log("AI worker exiting (channel closed)");

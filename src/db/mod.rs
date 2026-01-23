@@ -48,6 +48,11 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
 }
 
 #[cfg(test)]
+pub fn run_migrations_for_test(conn: &mut Connection) -> Result<()> {
+    run_migrations(conn)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

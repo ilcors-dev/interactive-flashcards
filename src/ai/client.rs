@@ -133,4 +133,156 @@ IMPORTANT:
             Err("No response choices received".into())
         }
     }
+
+    pub async fn evaluate_session(
+        &self,
+        deck_name: &str,
+        flashcards: &[(
+            String,
+            String,
+            Option<String>,
+            Option<super::evaluator::AIFeedback>,
+        )],
+        config: Option<&ModelConfig>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let mut qa_list = String::new();
+        let mut answered_count = 0;
+        let mut correct_count = 0;
+
+        for (i, (question, answer, user_answer, ai_feedback)) in flashcards.iter().enumerate() {
+            if let Some(user_ans) = user_answer {
+                answered_count += 1;
+                let score = ai_feedback
+                    .as_ref()
+                    .map(|f| f.correctness_score)
+                    .unwrap_or(0.0);
+                if score >= 0.7 {
+                    correct_count += 1;
+                }
+
+                qa_list.push_str(&format!("Q{}: {}\n", i + 1, question));
+                qa_list.push_str(&format!("A{}: {}\n", i + 1, answer));
+                qa_list.push_str(&format!("User: {}\n", user_ans));
+                if let Some(feedback) = ai_feedback {
+                    qa_list.push_str(&format!(
+                        "AI Score: {:.0}%, Feedback: {}\n",
+                        feedback.correctness_score * 100.0,
+                        feedback.explanation.chars().take(200).collect::<String>()
+                    ));
+                }
+                qa_list.push('\n');
+            }
+        }
+
+        let prompt = format!(
+            r#"Analyze this quiz session for "{}" and provide a comprehensive assessment.
+
+Quiz Results:
+- Total Questions: {}
+- Answered: {}
+- Correct (AI-evaluated): {}
+
+Question-Answer Pairs:
+{}
+
+IMPORTANT:
+- Respond ONLY with valid JSON (no markdown, no extra text)
+- Use this exact JSON structure:
+{{
+    "grade_percentage": float (0-100),
+    "mastery_level": "Beginner" | "Intermediate" | "Advanced" | "Expert",
+    "overall_feedback": "detailed paragraph analysis of performance",
+    "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
+    "strengths": ["strength1", "strength2"],
+    "weaknesses": ["weakness1", "weakness2"]
+}}
+
+Guidelines:
+- grade_percentage: weighted by answered questions, consider AI scores
+- mastery_level: Beginner (0-40%), Intermediate (41-70%), Advanced (71-90%), Expert (91-100%)
+- overall_feedback: 2-3 sentences analyzing patterns, progress, areas for improvement
+- suggestions: 3-5 actionable, specific study recommendations
+- strengths: 2-3 specific areas where user performed well
+- weaknesses: 2-3 specific areas needing improvement
+"#,
+            deck_name,
+            flashcards.len(),
+            answered_count,
+            correct_count,
+            qa_list
+        );
+
+        let model = config
+            .map(|c| c.model.clone())
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+
+        let messages = vec![
+            Message::text(
+                "system",
+                "You are an educational assessment coach. Provide constructive, specific feedback to help students improve.",
+            ),
+            Message::text("user", &prompt),
+        ];
+
+        let provider = ProviderPreferences::new().with_sort(ProviderSort::Throughput);
+
+        let request = ChatCompletionRequest {
+            model,
+            messages,
+            provider: Some(provider),
+            stream: None,
+            response_format: None,
+            tools: None,
+            tool_choice: None,
+            models: None,
+            transforms: None,
+            route: None,
+            user: None,
+            max_tokens: config.and_then(|c| c.max_tokens).or(Some(2048)),
+            temperature: config.and_then(|c| c.temperature).or(Some(0.5)),
+            top_p: None,
+            top_k: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            stop: None,
+            logit_bias: None,
+            logprobs: None,
+            top_logprobs: None,
+            prediction: None,
+            parallel_tool_calls: None,
+            verbosity: None,
+        };
+
+        let response = self
+            .client
+            .chat()?
+            .chat_completion(request)
+            .await
+            .map_err(|e| format!("OpenRouter API error: {}", e))?;
+
+        if let Some(choice) = response.choices.first() {
+            match &choice.message.content {
+                openrouter_api::MessageContent::Text(text) => Ok(text.clone()),
+                openrouter_api::MessageContent::Parts(parts) => {
+                    let text_parts: Vec<String> = parts
+                        .iter()
+                        .filter_map(|p| {
+                            if let openrouter_api::ContentPart::Text(tc) = p {
+                                Some(tc.text.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    Ok(text_parts.join("\n"))
+                }
+            }
+        } else {
+            Err("No response choices received".into())
+        }
+    }
 }

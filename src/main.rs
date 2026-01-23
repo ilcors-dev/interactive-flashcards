@@ -145,8 +145,55 @@ async fn main() -> io::Result<()> {
                 }
                 AppState::QuizQuitConfirm => draw_quit_confirmation(f),
                 AppState::Summary => {
-                    if let Some(session) = &quiz_session {
+                    if let Some(ref mut session) = quiz_session {
                         draw_summary(f, session);
+                        // Trigger session assessment if not already loading
+                        if session.assessment_loading
+                            && session.session_assessment.is_none()
+                            && session.assessment_error.is_none()
+                            && let Some(session_id) = session.session_id {
+                                let deck_name = session.deck_name.clone();
+                                let flashcards: Vec<_> = session
+                                    .flashcards
+                                    .iter()
+                                    .map(|fc| {
+                                        (
+                                            fc.question.clone(),
+                                            fc.answer.clone(),
+                                            fc.user_answer.clone(),
+                                            fc.ai_feedback.clone(),
+                                        )
+                                    })
+                                    .collect();
+
+                                if let Some(ref ai_tx) = session.ai_tx {
+                                    let request = AiRequest::EvaluateSession {
+                                        session_id,
+                                        deck_name,
+                                        flashcards,
+                                    };
+                                    let _ = ai_tx.try_send(request);
+                                    logger::log("Triggered session assessment request");
+                                } else if session.ai_enabled {
+                                    // AI is enabled but no channel - create one
+                                    let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
+                                    let (response_tx, response_rx) =
+                                        mpsc::channel::<AiResponse>(32);
+                                    let _ai_handle =
+                                        ai_worker::spawn_ai_worker(response_tx, request_rx);
+
+                                    let request = AiRequest::EvaluateSession {
+                                        session_id,
+                                        deck_name,
+                                        flashcards,
+                                    };
+                                    let _ = request_tx.try_send(request);
+
+                                    session.ai_tx = Some(request_tx);
+                                    session.ai_rx = Some(response_rx);
+                                    logger::log("Created new AI channel for session assessment");
+                                }
+                            }
                     }
                 }
             })?;
@@ -253,6 +300,9 @@ async fn main() -> io::Result<()> {
                                                 ai_tx: if ai_enabled { Some(request_tx) } else { None },
                                                 ai_rx: if ai_enabled { Some(response_rx) } else { None },
                                                 input_scroll_y: 0,
+                                                session_assessment: None,
+                                                assessment_loading: false,
+                                                assessment_error: None,
                                             });
 
                                             app_state = AppState::Quiz;
@@ -318,6 +368,9 @@ async fn main() -> io::Result<()> {
                                                     ai_tx: if ai_enabled { Some(request_tx) } else { None },
                                                     ai_rx: if ai_enabled { Some(response_rx) } else { None },
                                                     input_scroll_y: 0,
+                                                    session_assessment: None,
+                                                    assessment_loading: false,
+                                                    assessment_error: None,
                                                 });
 
                                                 app_state = AppState::Quiz;
@@ -356,6 +409,50 @@ async fn main() -> io::Result<()> {
                                     if let Ok(conn) = db::init_db() {
                                         sessions = session::list_sessions(&conn).unwrap_or_default();
                                     }
+                                },
+                                KeyCode::Char('r') | KeyCode::Char('R') => {
+                                    if let Some(ref mut session) = quiz_session
+                                        && (session.session_assessment.is_none() || session.assessment_error.is_some()) {
+                                            // Retry assessment
+                                            session.assessment_loading = true;
+                                            session.assessment_error = None;
+
+                                            if let Some(session_id) = session.session_id {
+                                                let deck_name = session.deck_name.clone();
+                                                let flashcards: Vec<_> = session.flashcards.iter().map(|fc| {
+                                                    (
+                                                        fc.question.clone(),
+                                                        fc.answer.clone(),
+                                                        fc.user_answer.clone(),
+                                                        fc.ai_feedback.clone(),
+                                                    )
+                                                }).collect();
+
+                                                if let Some(ref ai_tx) = session.ai_tx {
+                                                    let request = AiRequest::EvaluateSession {
+                                                        session_id,
+                                                        deck_name,
+                                                        flashcards,
+                                                    };
+                                                    let _ = ai_tx.try_send(request);
+                                                } else if session.ai_enabled {
+                                                    // Create new channel if needed
+                                                    let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
+                                                    let (response_tx, response_rx) = mpsc::channel::<AiResponse>(32);
+                                                    let _ai_handle = ai_worker::spawn_ai_worker(response_tx, request_rx);
+
+                                                    let request = AiRequest::EvaluateSession {
+                                                        session_id,
+                                                        deck_name,
+                                                        flashcards,
+                                                    };
+                                                    let _ = request_tx.try_send(request);
+
+                                                    session.ai_tx = Some(request_tx);
+                                                    session.ai_rx = Some(response_rx);
+                                                }
+                                            }
+                                        }
                                 },
                                 KeyCode::Esc => break,
                                 _ => {}

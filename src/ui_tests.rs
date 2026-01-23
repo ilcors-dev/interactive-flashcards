@@ -248,6 +248,9 @@ mod ui_integration_tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            session_assessment: None,
+            assessment_loading: false,
+            assessment_error: None,
         }
     }
 
@@ -305,6 +308,9 @@ mod ui_integration_tests {
             ai_rx: Some(response_rx),
 
             input_scroll_y: 0,
+            session_assessment: None,
+            assessment_loading: false,
+            assessment_error: None,
         };
 
         // Send an AI response through the async channel

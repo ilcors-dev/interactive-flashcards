@@ -1,4 +1,5 @@
 use crate::ai::AIFeedback;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
@@ -30,6 +31,9 @@ pub struct QuizSession {
     pub ai_tx: Option<mpsc::Sender<AiRequest>>,
     pub ai_rx: Option<mpsc::Receiver<AiResponse>>,
     pub input_scroll_y: u16,
+    pub session_assessment: Option<SessionAssessment>,
+    pub assessment_loading: bool,
+    pub assessment_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +120,11 @@ pub enum AiRequest {
         correct_answer: String,
         user_answer: String,
     },
+    EvaluateSession {
+        session_id: u64,
+        deck_name: String,
+        flashcards: Vec<(String, String, Option<String>, Option<AIFeedback>)>,
+    },
 }
 
 #[derive(Debug)]
@@ -123,6 +132,10 @@ pub enum AiResponse {
     Evaluation {
         flashcard_index: usize,
         result: crate::ai::AIEvaluationResult,
+    },
+    SessionAssessment {
+        session_id: u64,
+        result: Result<SessionAssessment, String>,
     },
     Error {
         flashcard_index: usize,
@@ -169,4 +182,21 @@ pub enum AppState {
     Quiz,
     QuizQuitConfirm,
     Summary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionAssessment {
+    pub grade_percentage: f32,
+    pub mastery_level: String,
+    pub overall_feedback: String,
+    pub suggestions: Vec<String>,
+    pub strengths: Vec<String>,
+    pub weaknesses: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionComparison {
+    pub previous_sessions: usize,
+    pub improvement_from_avg: f32,
+    pub trend: String,
 }
