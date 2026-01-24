@@ -35,6 +35,7 @@ pub struct QuizSession {
     pub session_assessment: Option<SessionAssessment>,
     pub assessment_loading: bool,
     pub assessment_error: Option<String>,
+    pub assessment_scroll_y: u16,
 }
 
 #[derive(Debug, Clone)]

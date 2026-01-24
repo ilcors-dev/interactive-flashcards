@@ -303,6 +303,7 @@ async fn main() -> io::Result<()> {
                                                 session_assessment: None,
                                                 assessment_loading: false,
                                                 assessment_error: None,
+                                                assessment_scroll_y: 0,
                                             });
 
                                             app_state = AppState::Quiz;
@@ -372,6 +373,7 @@ async fn main() -> io::Result<()> {
                                                     session_assessment: None,
                                                     assessment_loading: false,
                                                     assessment_error: None,
+                                                    assessment_scroll_y: 0,
                                                 });
 
                                                 app_state = AppState::Quiz;
@@ -474,7 +476,25 @@ async fn main() -> io::Result<()> {
                     Event::Mouse(mouse_event) => {
                         match mouse_event.kind {
                             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                                // Ignore scroll events to prevent navigation
+                                // Handle assessment scrolling when in summary state
+                                if app_state == AppState::Summary {
+                                    if let Some(ref mut session) = quiz_session {
+                                        // Simple scroll: 1 line per scroll event with bounds checking
+                                        match mouse_event.kind {
+                                            MouseEventKind::ScrollUp => {
+                                                session.assessment_scroll_y = session.assessment_scroll_y.saturating_sub(1);
+                                            }
+                                            MouseEventKind::ScrollDown => {
+                                                // Limit maximum scroll to prevent going too far (reasonable limit)
+                                                let max_scroll = 100; // Adjust based on typical content length
+                                                session.assessment_scroll_y = session.assessment_scroll_y.saturating_add(1).min(max_scroll);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                } else {
+                                    // Ignore scroll events in other states to prevent navigation
+                                }
                             }
                             _ => {}
                         }

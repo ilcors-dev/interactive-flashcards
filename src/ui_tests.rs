@@ -253,6 +253,7 @@ mod ui_integration_tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         }
     }
 
@@ -314,6 +315,7 @@ mod ui_integration_tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
 
         // Send an AI response through the async channel

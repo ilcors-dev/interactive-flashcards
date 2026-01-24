@@ -541,6 +541,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -598,6 +599,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -640,6 +642,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -685,6 +688,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -730,6 +734,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -771,6 +776,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -816,6 +822,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -879,6 +886,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -932,6 +940,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -992,6 +1001,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1039,6 +1049,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1085,6 +1096,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1144,6 +1156,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1196,6 +1209,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1291,6 +1305,7 @@ mod tests {
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
+            assessment_scroll_y: 0,
         };
         let app_state = &mut AppState::Quiz;
 
