@@ -57,6 +57,7 @@ IMPORTANT:
 }}
 - Do not account for minor typos in the user's answer when determining correctness.
 - Do not penalize long answers; evaluate based on content accuracy and completeness.
+- The explanation must be discoursive and can contain markdown formatting texts (bold, italics, lists) to enhance readability. Avoid over-using lists.
 "#,
             question, correct_answer, user_answer
         );
