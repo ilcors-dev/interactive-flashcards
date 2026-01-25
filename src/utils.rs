@@ -1,7 +1,7 @@
 use unicode_width::UnicodeWidthChar;
 
 pub mod markdown;
-pub use markdown::{render_markdown, render_markdown_truncated};
+pub use markdown::render_markdown;
 
 /// Convert a byte index to a character index within a string.
 /// This handles multi-byte UTF-8 characters correctly.
