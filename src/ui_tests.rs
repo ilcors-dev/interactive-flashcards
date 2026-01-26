@@ -97,13 +97,13 @@ mod ui_integration_tests {
         // Initial menu state (index 0, with default values for other fields)
         let initial_state = (
             AppState::Menu,
-            Some((0, false, false, 0, 0, 0, false, 0, 0)),
+            Some((0, false, false, 0, 0, 0, 0, false, 0, 0)),
         );
 
         // Simulate down arrow navigation (should change selected index to 1)
         let after_navigation = (
             AppState::Menu,
-            Some((1, false, false, 0, 0, 0, false, 0, 0)),
+            Some((1, false, false, 0, 0, 0, 0, false, 0, 0)),
         );
 
         assert_ne!(
@@ -250,6 +250,7 @@ mod ui_integration_tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -260,7 +261,7 @@ mod ui_integration_tests {
     /// Helper function to calculate UI state tuple for a session (matches main.rs logic)
     fn calculate_ui_state_tuple(
         session: &QuizSession,
-    ) -> (usize, bool, bool, usize, usize, u16, bool, usize, usize) {
+    ) -> (usize, bool, bool, usize, usize, u16, u16, bool, usize, usize) {
         (
             session.current_index,
             session.showing_answer,
@@ -268,6 +269,7 @@ mod ui_integration_tests {
             session.input_buffer.len(),
             session.cursor_position,
             session.input_scroll_y,
+            session.feedback_scroll_y,
             session.last_ai_error.is_some(),
             session.questions_answered,
             session
@@ -312,6 +314,7 @@ mod ui_integration_tests {
             ai_rx: Some(response_rx),
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,

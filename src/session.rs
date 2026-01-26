@@ -538,6 +538,7 @@ mod tests {
             ai_tx: Some(tx),
             ai_rx: None,
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -596,6 +597,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -639,6 +641,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -685,6 +688,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -731,6 +735,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -773,6 +778,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -819,6 +825,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -883,6 +890,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -937,6 +945,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -998,6 +1007,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -1046,6 +1056,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -1093,6 +1104,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -1153,6 +1165,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -1206,6 +1219,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,
@@ -1302,6 +1316,7 @@ mod tests {
             ai_rx: None,
 
             input_scroll_y: 0,
+            feedback_scroll_y: 0,
             session_assessment: None,
             assessment_loading: false,
             assessment_error: None,

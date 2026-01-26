@@ -20,7 +20,9 @@ pub fn render_markdown(content: &str) -> Vec<Line<'static>> {
                 .into_iter()
                 .map(|span| {
                     // Create new span with content and preserve modifiers (colors are complex to convert)
-                    let add_mods = ratatui::style::Modifier::from_bits_truncate(span.style.add_modifier.bits());
+                    let add_mods = ratatui::style::Modifier::from_bits_truncate(
+                        span.style.add_modifier.bits(),
+                    );
                     let new_style = ratatui::style::Style::default().add_modifier(add_mods);
                     Span::styled(span.content.to_string(), new_style)
                 })
@@ -127,6 +129,9 @@ mod tests {
         let line = &result[0];
         assert_eq!(line.spans.len(), 1);
         let span = &line.spans[0];
-        assert!(span.style.add_modifier.intersects(ratatui::style::Modifier::BOLD));
+        assert!(span
+            .style
+            .add_modifier
+            .intersects(ratatui::style::Modifier::BOLD));
     }
 }

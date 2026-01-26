@@ -1,3 +1,4 @@
+use ratatui::text::Text;
 use unicode_width::UnicodeWidthChar;
 
 pub mod markdown;
@@ -51,7 +52,7 @@ pub fn truncate_string(s: &str, max_len: usize) -> String {
 /// - start_byte_idx/start_char_idx: position of first character of first word on the line
 /// - end_byte_idx/end_char_idx: position after last character of last word (exclusive),
 ///   which is also the start position of the next line's content (skipping whitespace)
-fn simulate_wrapped_lines(
+pub fn simulate_wrapped_lines(
     text: &str,
     max_width: usize,
 ) -> Vec<(String, usize, usize, usize, usize)> {
@@ -412,6 +413,152 @@ pub fn calculate_wrapped_cursor_position(
     }
 
     (0, 0)
+}
+
+/// Calculate the total height (number of lines) of text when wrapped to a specific width.
+/// This accounts for both explicit newlines and automatic wrapping.
+///
+/// # Arguments
+/// * `text` - The text to calculate height for
+/// * `max_width` - The maximum width for wrapping (in character display units)
+///
+/// # Returns
+/// The total number of lines the text will occupy when wrapped
+pub fn calculate_content_height(text: &str, max_width: usize) -> usize {
+    simulate_wrapped_lines(text, max_width).len()
+}
+
+/// Calculate the maximum scroll position for content given the visible area height.
+/// Returns 0 if content fits entirely in the visible area.
+///
+/// # Arguments
+/// * `content_height` - Total height of content in lines
+/// * `visible_height` - Height of visible area in lines
+///
+/// # Returns
+/// Maximum valid scroll position (0-based line number)
+pub fn calculate_max_scroll(content_height: usize, visible_height: usize) -> u16 {
+    if content_height <= visible_height {
+        0
+    } else {
+        (content_height - visible_height) as u16
+    }
+}
+
+/// Apply a scroll delta to current position with bounds checking.
+/// Ensures the resulting scroll position stays within valid range [0, max_scroll].
+/// Designed for line-by-line scrolling to provide precise control when reading content.
+///
+/// # Arguments
+/// * `current_scroll` - Current scroll position
+/// * `delta` - Scroll change (positive for down, negative for up, typically ±1 for line-by-line)
+/// * `max_scroll` - Maximum allowed scroll position
+///
+/// # Returns
+/// New scroll position within bounds
+pub fn apply_scroll_with_bounds(current_scroll: u16, delta: i16, max_scroll: u16) -> u16 {
+    if delta >= 0 {
+        // Scrolling down
+        current_scroll.saturating_add(delta as u16).min(max_scroll)
+    } else {
+        // Scrolling up (delta is negative)
+        current_scroll.saturating_sub((-delta) as u16)
+    }
+}
+
+/// Convert a ratatui Text object to a plain string for content height calculation.
+/// Handles different Span styling and formats while preserving the actual text content.
+///
+/// # Arguments
+/// * `text` - The ratatui Text object to convert
+///
+/// # Returns
+/// A Result containing string representation or an error if conversion fails
+pub fn render_text_to_string(text: &Text) -> Result<String, Box<dyn std::error::Error>> {
+    let mut result = String::new();
+
+    for line in &text.lines {
+        for span in &line.spans {
+            result.push_str(&span.content);
+        }
+        // Add newline between lines (except last line)
+        result.push('\n');
+    }
+
+    // Remove trailing newline if present
+    if result.ends_with('\n') {
+        result.pop();
+    }
+
+    Ok(result)
+}
+
+#[cfg(test)]
+mod scroll_tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_content_height() {
+        // Simple case - text fits on one line
+        assert_eq!(calculate_content_height("Hello", 10), 1);
+
+        // Wrapping case - text wraps to multiple lines
+        assert_eq!(calculate_content_height("Hello world", 10), 2);
+
+        // Multiple newlines
+        assert_eq!(calculate_content_height("Line1\nLine2\nLine3", 20), 3);
+
+        // Empty text
+        assert_eq!(calculate_content_height("", 10), 0);
+    }
+
+    #[test]
+    fn test_calculate_max_scroll() {
+        // Content fits - no scroll needed
+        assert_eq!(calculate_max_scroll(5, 10), 0);
+
+        // Content larger than visible - scroll needed
+        assert_eq!(calculate_max_scroll(15, 10), 5);
+
+        // Equal sizes - no scroll
+        assert_eq!(calculate_max_scroll(10, 10), 0);
+    }
+
+    #[test]
+    fn test_apply_scroll_with_bounds() {
+        // Scroll down within bounds
+        assert_eq!(apply_scroll_with_bounds(5, 3, 10), 8);
+
+        // Scroll down to max
+        assert_eq!(apply_scroll_with_bounds(8, 5, 10), 10);
+
+        // Scroll up
+        assert_eq!(apply_scroll_with_bounds(8, -3, 10), 5);
+
+        // Scroll up to min
+        assert_eq!(apply_scroll_with_bounds(2, -5, 10), 0);
+
+        // Scroll up beyond min (saturation)
+        assert_eq!(apply_scroll_with_bounds(1, -10, 10), 0);
+    }
+
+    #[test]
+    fn test_render_text_to_string() {
+        // Simple text
+        let text = Text::from("Hello");
+        let result = render_text_to_string(&text).unwrap();
+        assert_eq!(result, "Hello");
+
+        // Multi-line text
+        let text = Text::from("Line1\nLine2");
+        let result = render_text_to_string(&text).unwrap();
+        assert_eq!(result, "Line1\nLine2");
+
+        // Empty text
+        let text = Text::from("");
+        let result = render_text_to_string(&text).unwrap();
+        assert_eq!(result, "");
+    }
 }
 
 #[cfg(test)]

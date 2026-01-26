@@ -25,7 +25,10 @@ use interactive_flashcards::{
         AiRequest, AiResponse, AppState, Flashcard, QuizSession, UiMenuState, UiQuizState, UiState,
         UiStateTypes,
     },
+    utils::{calculate_content_height, calculate_max_scroll, apply_scroll_with_bounds},
 };
+
+const SCROLL_LINES_PER_EVENT: i16 = 1;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -94,6 +97,7 @@ async fn main() -> io::Result<()> {
                         input_buffer_len: session.input_buffer.len(), // Text content length
                         cursor_position: session.cursor_position,     // Cursor position
                         input_scroll_y: session.input_scroll_y, // Scroll position for long text
+                        feedback_scroll_y: session.feedback_scroll_y, // Feedback scroll position
                         has_ai_error: session.last_ai_error.is_some(), // Error message presence
                         questions_answered: session.questions_answered, // Progress indicator
                         ai_feedback_count: session
@@ -300,6 +304,7 @@ async fn main() -> io::Result<()> {
                                                 ai_tx: if ai_enabled { Some(request_tx) } else { None },
                                                 ai_rx: if ai_enabled { Some(response_rx) } else { None },
                                                 input_scroll_y: 0,
+                                                feedback_scroll_y: 0,
                                                 session_assessment: None,
                                                 assessment_loading: false,
                                                 assessment_error: None,
@@ -370,6 +375,7 @@ async fn main() -> io::Result<()> {
                                                     ai_tx: if ai_enabled { Some(request_tx) } else { None },
                                                     ai_rx: if ai_enabled { Some(response_rx) } else { None },
                                                     input_scroll_y: 0,
+                                                    feedback_scroll_y: 0,
                                                     session_assessment: None,
                                                     assessment_loading: false,
                                                     assessment_error: None,
@@ -476,24 +482,157 @@ async fn main() -> io::Result<()> {
                     Event::Mouse(mouse_event) => {
                         match mouse_event.kind {
                             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                                // Handle assessment scrolling when in summary state
-                                if app_state == AppState::Summary {
-                                    if let Some(ref mut session) = quiz_session {
-                                        // Simple scroll: 1 line per scroll event with bounds checking
-                                        match mouse_event.kind {
-                                            MouseEventKind::ScrollUp => {
-                                                session.assessment_scroll_y = session.assessment_scroll_y.saturating_sub(1);
+                                match app_state {
+                                    AppState::Quiz => {
+                                        // Handle feedback scrolling when in quiz state and showing answer
+                                        if let Some(ref mut session) = quiz_session
+                                            && session.showing_answer {
+                                                // Calculate content bounds for feedback area
+                                                let visible_height = 20; // Approximate - will be refined in UI
+                                                let text_width = 80;   // Approximate - will be refined in UI
+                                                
+                                                // Build answer content text for height calculation
+                                                let mut answer_text = String::new();
+                                                let flashcard = &session.flashcards[session.current_index];
+                                                
+                                                // Add correct answer
+                                                answer_text.push_str("Correct Answer:\n");
+                                                answer_text.push_str(&flashcard.answer);
+                                                answer_text.push('\n');
+                                                
+                                                // Add user answer if available
+                                                if let Some(user_answer) = &flashcard.user_answer {
+                                                    answer_text.push_str("\nYour Answer:\n");
+                                                    answer_text.push_str(user_answer);
+                                                    answer_text.push('\n');
+                                                }
+                                                
+                                                // Add AI feedback if available
+                                                if let Some(feedback) = &flashcard.ai_feedback {
+                                                    answer_text.push_str("\nAI Evaluation:\n");
+                                                    answer_text.push_str(&format!(
+                                                        "Score: {:.0}% - {}\n",
+                                                        feedback.correctness_score * 100.0,
+                                                        if feedback.is_correct {
+                                                            "Correct"
+                                                        } else if feedback.correctness_score > 0.5 {
+                                                            "Partially Correct"
+                                                        } else {
+                                                            "Incorrect"
+                                                        }
+                                                    ));
+                                                    
+                                                    if !feedback.corrections.is_empty() {
+                                                        answer_text.push_str("\nCorrections:\n");
+                                                        for correction in &feedback.corrections {
+                                                            answer_text.push_str(&format!("• {}\n", correction));
+                                                        }
+                                                    }
+                                                    
+                                                    answer_text.push_str("\nExplanation:\n");
+                                                    answer_text.push_str(&feedback.explanation);
+                                                    answer_text.push('\n');
+                                                    
+                                                    if !feedback.suggestions.is_empty() {
+                                                        answer_text.push_str("\nSuggestions:\n");
+                                                        for suggestion in &feedback.suggestions {
+                                                            answer_text.push_str(&format!("• {}\n", suggestion));
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                let content_height = calculate_content_height(&answer_text, text_width);
+                                                let max_scroll = calculate_max_scroll(content_height, visible_height);
+                                                
+                                                // Apply scroll with bounds checking (1 line per scroll event for precise control)
+                                                let scroll_delta = if mouse_event.kind == MouseEventKind::ScrollUp { -SCROLL_LINES_PER_EVENT } else { SCROLL_LINES_PER_EVENT };
+                                                session.feedback_scroll_y = apply_scroll_with_bounds(
+                                                    session.feedback_scroll_y,
+                                                    scroll_delta,
+                                                    max_scroll,
+                                                );
                                             }
-                                            MouseEventKind::ScrollDown => {
-                                                // Limit maximum scroll to prevent going too far (reasonable limit)
-                                                let max_scroll = 100; // Adjust based on typical content length
-                                                session.assessment_scroll_y = session.assessment_scroll_y.saturating_add(1).min(max_scroll);
+                                    }
+                                    AppState::Summary => {
+                                        // Handle assessment scrolling with dynamic bounds
+                                        if let Some(ref mut session) = quiz_session {
+                                            // Build assessment content text for height calculation
+                                            let mut assessment_text = String::new();
+                                            
+                                            // Add stats header
+                                            let ai_feedback_count = session.flashcards
+                                                .iter()
+                                                .filter(|c| c.ai_feedback.is_some())
+                                                .count();
+                                            
+                                            let avg_score = if ai_feedback_count > 0 {
+                                                let total_score: f32 = session.flashcards
+                                                    .iter()
+                                                    .filter_map(|c| c.ai_feedback.as_ref())
+                                                    .map(|feedback| feedback.correctness_score)
+                                                    .sum();
+                                                total_score / ai_feedback_count as f32
+                                            } else {
+                                                0.0
+                                            };
+                                            
+                                            assessment_text.push_str(&format!(
+                                                "Answered: {}  |  Avg Score: {:.0}%\n\n",
+                                                session.questions_answered, avg_score
+                                            ));
+                                            
+                                            // Add assessment content if available
+                                            if let Some(ref assessment) = session.session_assessment {
+                                                assessment_text.push_str(&format!(
+                                                    "Grade: {:.0}%  |  {}\n\n",
+                                                    assessment.grade_percentage, assessment.mastery_level
+                                                ));
+                                                assessment_text.push_str("Feedback:\n");
+                                                assessment_text.push_str(&assessment.overall_feedback);
+                                                assessment_text.push_str("\n\n");
+                                                
+                                                if !assessment.strengths.is_empty() {
+                                                    assessment_text.push_str("Strengths:\n");
+                                                    for strength in &assessment.strengths {
+                                                        assessment_text.push_str(&format!("  ✓ {}\n", strength));
+                                                    }
+                                                    assessment_text.push('\n');
+                                                }
+                                                
+                                                if !assessment.weaknesses.is_empty() {
+                                                    assessment_text.push_str("Areas to Improve:\n");
+                                                    for weakness in &assessment.weaknesses {
+                                                        assessment_text.push_str(&format!("  ✗ {}\n", weakness));
+                                                    }
+                                                    assessment_text.push('\n');
+                                                }
+                                                
+                                                if !assessment.suggestions.is_empty() {
+                                                    assessment_text.push_str("Suggestions:\n");
+                                                    for (i, suggestion) in assessment.suggestions.iter().enumerate() {
+                                                        assessment_text.push_str(&format!("  {}. {}\n", i + 1, suggestion));
+                                                    }
+                                                }
                                             }
-                                            _ => {}
+                                            
+                                            // Calculate scroll bounds
+                                            let visible_height = 20; // Approximate - will be refined in UI
+                                            let text_width = 80;   // Approximate - will be refined in UI
+                                            let content_height = calculate_content_height(&assessment_text, text_width);
+                                            let max_scroll = calculate_max_scroll(content_height, visible_height);
+                                            
+                                            // Apply scroll with bounds checking (1 line per scroll event for precise control)
+                                            let scroll_delta = if mouse_event.kind == MouseEventKind::ScrollUp { -SCROLL_LINES_PER_EVENT } else { SCROLL_LINES_PER_EVENT };
+                                            session.assessment_scroll_y = apply_scroll_with_bounds(
+                                                session.assessment_scroll_y,
+                                                scroll_delta,
+                                                max_scroll,
+                                            );
                                         }
                                     }
-                                } else {
-                                    // Ignore scroll events in other states to prevent navigation
+                                    _ => {
+                                        // Ignore scroll events in other states to prevent navigation
+                                    }
                                 }
                             }
                             _ => {}

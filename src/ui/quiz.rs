@@ -1,5 +1,7 @@
 use crate::models::QuizSession;
-use crate::utils::render_markdown;
+use crate::utils::{
+    calculate_content_height, calculate_max_scroll, render_markdown, render_text_to_string,
+};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -127,8 +129,10 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
         })
     };
 
-    // Calculate scroll position for input mode to keep cursor visible
+    // Calculate scroll position for input mode to keep cursor visible,
+    // or use feedback scroll position when showing answer
     let scroll_y = if !session.showing_answer {
+        // Input mode: cursor-follow scrolling
         let visible_height = (chunks[2].height - 2) as usize; // Account for borders
         let text_width = (chunks[2].width - 2) as usize;
         let (cursor_line, _) = crate::calculate_wrapped_cursor_position(
@@ -147,7 +151,20 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
         session.input_scroll_y = new_scroll as u16;
         new_scroll as u16
     } else {
-        0
+        // Answer view mode: use feedback scroll with bounds checking
+        let visible_height = (chunks[2].height - 2) as usize;
+        let text_width = (chunks[2].width - 2) as usize;
+
+        // Convert answer content to string for height calculation
+        let answer_text = render_text_to_string(&answer_content).unwrap_or_default();
+
+        let content_height = calculate_content_height(&answer_text, text_width);
+        let max_scroll = calculate_max_scroll(content_height, visible_height);
+        let bounded_scroll = session.feedback_scroll_y.min(max_scroll);
+
+        // Update session with bounded scroll position to prevent drift
+        session.feedback_scroll_y = bounded_scroll;
+        bounded_scroll
     };
 
     let answer = Paragraph::new(answer_content)
