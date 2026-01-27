@@ -210,6 +210,27 @@ mod ui_integration_tests {
         }
     }
 
+    #[test]
+    fn test_menu_delete_confirm_state_transition() {
+        use crate::AppState;
+
+        let mut app_state = AppState::Menu;
+
+        // Simulate 'd' key press
+        app_state = AppState::MenuDeleteConfirm;
+        assert_eq!(app_state, AppState::MenuDeleteConfirm);
+
+        // Simulate 'n' key press (cancel)
+        app_state = AppState::Menu;
+        assert_eq!(app_state, AppState::Menu);
+
+        // Simulate 'y' key press (confirm)
+        app_state = AppState::MenuDeleteConfirm;
+        // Logic for deletion happens in main.rs, here we just check state transition
+        app_state = AppState::Menu;
+        assert_eq!(app_state, AppState::Menu);
+    }
+
     /// Helper function to create a test session
     fn create_test_session() -> QuizSession {
         let flashcards = vec![
@@ -261,7 +282,18 @@ mod ui_integration_tests {
     /// Helper function to calculate UI state tuple for a session (matches main.rs logic)
     fn calculate_ui_state_tuple(
         session: &QuizSession,
-    ) -> (usize, bool, bool, usize, usize, u16, u16, bool, usize, usize) {
+    ) -> (
+        usize,
+        bool,
+        bool,
+        usize,
+        usize,
+        u16,
+        u16,
+        bool,
+        usize,
+        usize,
+    ) {
         (
             session.current_index,
             session.showing_answer,

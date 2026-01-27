@@ -97,7 +97,7 @@ pub fn session_exists(conn: &Connection, session_id: u64) -> bool {
 pub fn list_sessions(conn: &Connection) -> Result<Vec<SessionSummary>> {
     let mut stmt = conn.prepare(
         "SELECT id, deck_name, started_at, completed_at, questions_total, questions_answered
-         FROM sessions ORDER BY id DESC",
+         FROM sessions WHERE deleted_at IS NULL ORDER BY id DESC",
     )?;
 
     let sessions = stmt
@@ -138,6 +138,15 @@ pub fn delete_session(conn: &Connection, session_id: u64) -> Result<()> {
         [session_id],
     )?;
     conn.execute("DELETE FROM sessions WHERE id = ?", [session_id])?;
+    Ok(())
+}
+
+pub fn soft_delete_session(conn: &Connection, session_id: u64) -> Result<()> {
+    let deleted_at = now();
+    conn.execute(
+        "UPDATE sessions SET deleted_at = ? WHERE id = ?",
+        rusqlite::params![deleted_at, session_id],
+    )?;
     Ok(())
 }
 
@@ -464,5 +473,25 @@ mod tests {
         delete_session(&conn, session_id).unwrap();
 
         assert!(get_session_assessment(&conn, session_id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_soft_delete_session() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        let session_id = create_session(&conn, "Test Deck", 10).unwrap();
+        assert!(session_exists(&conn, session_id));
+
+        soft_delete_session(&conn, session_id).unwrap();
+
+        // session_exists checks if the ID is in the table, which it should be (soft deleted)
+        assert!(session_exists(&conn, session_id));
+
+        // But list_sessions should NOT return it
+        let sessions = list_sessions(&conn).unwrap();
+        assert_eq!(sessions.len(), 0);
     }
 }

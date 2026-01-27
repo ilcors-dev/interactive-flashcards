@@ -243,3 +243,66 @@ pub fn draw_menu(
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, help_chunks[1]);
 }
+
+pub fn draw_delete_confirmation(f: &mut Frame) {
+    let area = f.area();
+
+    // Create a centered rect for the confirmation dialog
+    let popup_block = Block::default()
+        .title(" Delete Session ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .style(Style::default().bg(Color::Black));
+
+    let vertical_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - 30) / 2),
+            Constraint::Length(7),
+            Constraint::Percentage((100 - 30) / 2),
+        ])
+        .split(area);
+
+    let center_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - 40) / 2),
+            Constraint::Length(50),
+            Constraint::Percentage((100 - 40) / 2),
+        ])
+        .split(vertical_chunks[1]);
+
+    let dialog_area = center_chunks[1];
+    f.render_widget(ratatui::widgets::Clear, dialog_area); // Clear the area before rendering the popup
+    f.render_widget(popup_block, dialog_area);
+
+    let content_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([Constraint::Length(2), Constraint::Length(3)])
+        .split(dialog_area);
+
+    let message = Paragraph::new("Are you sure you want to delete this session?")
+        .style(Style::default().fg(Color::White))
+        .alignment(Alignment::Center);
+    f.render_widget(message, content_chunks[0]);
+
+    let help_text = vec![Line::from(vec![
+        Span::styled(
+            "y",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" Yes  "),
+        Span::styled(
+            "n/Esc",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" No"),
+    ])];
+    let help = Paragraph::new(help_text)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::NONE));
+    f.render_widget(help, content_chunks[1]);
+}

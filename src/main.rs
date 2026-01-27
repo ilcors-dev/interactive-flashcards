@@ -25,7 +25,7 @@ use interactive_flashcards::{
         AiRequest, AiResponse, AppState, Flashcard, QuizSession, UiMenuState, UiQuizState, UiState,
         UiStateTypes,
     },
-    utils::{calculate_content_height, calculate_max_scroll, apply_scroll_with_bounds},
+    utils::{apply_scroll_with_bounds, calculate_content_height, calculate_max_scroll},
 };
 
 const SCROLL_LINES_PER_EVENT: i16 = 1;
@@ -78,8 +78,8 @@ async fn main() -> io::Result<()> {
     loop {
         // Check if UI needs updating based on state changes
         let current_ui_state = match app_state {
-            AppState::Menu => UiState {
-                app_state: AppState::Menu,
+            AppState::Menu | AppState::MenuDeleteConfirm => UiState {
+                app_state: app_state.clone(),
                 current: Some(UiStateTypes::Menu(UiMenuState {
                     selected_file_index,
                     selected_session_index,
@@ -141,6 +141,18 @@ async fn main() -> io::Result<()> {
                     focused_panel,
                     ai_enabled,
                 ),
+                AppState::MenuDeleteConfirm => {
+                    draw_menu(
+                        f,
+                        &csv_files,
+                        selected_file_index,
+                        &sessions,
+                        selected_session_index,
+                        focused_panel,
+                        ai_enabled,
+                    );
+                    interactive_flashcards::draw_delete_confirmation(f);
+                }
                 AppState::Quiz => {
                     if let Some(ref mut session) = quiz_session {
                         // Draw the quiz with current state (AI responses handled asynchronously)
@@ -387,7 +399,33 @@ async fn main() -> io::Result<()> {
                                         }
                                     }
                                 }
+                                KeyCode::Char('d') => {
+                                    if focused_panel == 1 && !sessions.is_empty() {
+                                        app_state = AppState::MenuDeleteConfirm;
+                                    }
+                                }
                                 KeyCode::Esc => break,
+                                _ => {}
+                            },
+                            AppState::MenuDeleteConfirm => match key.code {
+                                KeyCode::Char('y') => {
+                                    if !sessions.is_empty() && selected_session_index < sessions.len() {
+                                        let session_id = sessions[selected_session_index].id;
+                                        if let Ok(conn) = db::init_db() {
+                                            if let Err(e) = session::soft_delete_session(&conn, session_id) {
+                                                eprintln!("Failed to delete session: {}", e);
+                                            }
+                                            sessions = session::list_sessions(&conn).unwrap_or_default();
+                                            if selected_session_index >= sessions.len() && !sessions.is_empty() {
+                                                selected_session_index = sessions.len() - 1;
+                                            }
+                                        }
+                                    }
+                                    app_state = AppState::Menu;
+                                }
+                                KeyCode::Char('n') | KeyCode::Esc => {
+                                    app_state = AppState::Menu;
+                                }
                                 _ => {}
                             },
                             AppState::Quiz => {
@@ -490,23 +528,23 @@ async fn main() -> io::Result<()> {
                                                 // Calculate content bounds for feedback area
                                                 let visible_height = 20; // Approximate - will be refined in UI
                                                 let text_width = 80;   // Approximate - will be refined in UI
-                                                
+
                                                 // Build answer content text for height calculation
                                                 let mut answer_text = String::new();
                                                 let flashcard = &session.flashcards[session.current_index];
-                                                
+
                                                 // Add correct answer
                                                 answer_text.push_str("Correct Answer:\n");
                                                 answer_text.push_str(&flashcard.answer);
                                                 answer_text.push('\n');
-                                                
+
                                                 // Add user answer if available
                                                 if let Some(user_answer) = &flashcard.user_answer {
                                                     answer_text.push_str("\nYour Answer:\n");
                                                     answer_text.push_str(user_answer);
                                                     answer_text.push('\n');
                                                 }
-                                                
+
                                                 // Add AI feedback if available
                                                 if let Some(feedback) = &flashcard.ai_feedback {
                                                     answer_text.push_str("\nAI Evaluation:\n");
@@ -521,18 +559,18 @@ async fn main() -> io::Result<()> {
                                                             "Incorrect"
                                                         }
                                                     ));
-                                                    
+
                                                     if !feedback.corrections.is_empty() {
                                                         answer_text.push_str("\nCorrections:\n");
                                                         for correction in &feedback.corrections {
                                                             answer_text.push_str(&format!("• {}\n", correction));
                                                         }
                                                     }
-                                                    
+
                                                     answer_text.push_str("\nExplanation:\n");
                                                     answer_text.push_str(&feedback.explanation);
                                                     answer_text.push('\n');
-                                                    
+
                                                     if !feedback.suggestions.is_empty() {
                                                         answer_text.push_str("\nSuggestions:\n");
                                                         for suggestion in &feedback.suggestions {
@@ -540,10 +578,10 @@ async fn main() -> io::Result<()> {
                                                         }
                                                     }
                                                 }
-                                                
+
                                                 let content_height = calculate_content_height(&answer_text, text_width);
                                                 let max_scroll = calculate_max_scroll(content_height, visible_height);
-                                                
+
                                                 // Apply scroll with bounds checking (1 line per scroll event for precise control)
                                                 let scroll_delta = if mouse_event.kind == MouseEventKind::ScrollUp { -SCROLL_LINES_PER_EVENT } else { SCROLL_LINES_PER_EVENT };
                                                 session.feedback_scroll_y = apply_scroll_with_bounds(
@@ -558,13 +596,13 @@ async fn main() -> io::Result<()> {
                                         if let Some(ref mut session) = quiz_session {
                                             // Build assessment content text for height calculation
                                             let mut assessment_text = String::new();
-                                            
+
                                             // Add stats header
                                             let ai_feedback_count = session.flashcards
                                                 .iter()
                                                 .filter(|c| c.ai_feedback.is_some())
                                                 .count();
-                                            
+
                                             let avg_score = if ai_feedback_count > 0 {
                                                 let total_score: f32 = session.flashcards
                                                     .iter()
@@ -575,12 +613,12 @@ async fn main() -> io::Result<()> {
                                             } else {
                                                 0.0
                                             };
-                                            
+
                                             assessment_text.push_str(&format!(
                                                 "Answered: {}  |  Avg Score: {:.0}%\n\n",
                                                 session.questions_answered, avg_score
                                             ));
-                                            
+
                                             // Add assessment content if available
                                             if let Some(ref assessment) = session.session_assessment {
                                                 assessment_text.push_str(&format!(
@@ -590,7 +628,7 @@ async fn main() -> io::Result<()> {
                                                 assessment_text.push_str("Feedback:\n");
                                                 assessment_text.push_str(&assessment.overall_feedback);
                                                 assessment_text.push_str("\n\n");
-                                                
+
                                                 if !assessment.strengths.is_empty() {
                                                     assessment_text.push_str("Strengths:\n");
                                                     for strength in &assessment.strengths {
@@ -598,7 +636,7 @@ async fn main() -> io::Result<()> {
                                                     }
                                                     assessment_text.push('\n');
                                                 }
-                                                
+
                                                 if !assessment.weaknesses.is_empty() {
                                                     assessment_text.push_str("Areas to Improve:\n");
                                                     for weakness in &assessment.weaknesses {
@@ -606,7 +644,7 @@ async fn main() -> io::Result<()> {
                                                     }
                                                     assessment_text.push('\n');
                                                 }
-                                                
+
                                                 if !assessment.suggestions.is_empty() {
                                                     assessment_text.push_str("Suggestions:\n");
                                                     for (i, suggestion) in assessment.suggestions.iter().enumerate() {
@@ -614,13 +652,13 @@ async fn main() -> io::Result<()> {
                                                     }
                                                 }
                                             }
-                                            
+
                                             // Calculate scroll bounds
                                             let visible_height = 20; // Approximate - will be refined in UI
                                             let text_width = 80;   // Approximate - will be refined in UI
                                             let content_height = calculate_content_height(&assessment_text, text_width);
                                             let max_scroll = calculate_max_scroll(content_height, visible_height);
-                                            
+
                                             // Apply scroll with bounds checking (1 line per scroll event for precise control)
                                             let scroll_delta = if mouse_event.kind == MouseEventKind::ScrollUp { -SCROLL_LINES_PER_EVENT } else { SCROLL_LINES_PER_EVENT };
                                             session.assessment_scroll_y = apply_scroll_with_bounds(

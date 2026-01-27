@@ -18,5 +18,7 @@ pub use csv::{get_csv_files, load_csv};
 pub use db::flashcard;
 pub use models::{AppState, Flashcard, QuizSession};
 pub use session::handle_quiz_input;
-pub use ui::{draw_menu, draw_quit_confirmation, draw_quiz, draw_summary};
+pub use ui::{
+    draw_delete_confirmation, draw_menu, draw_quit_confirmation, draw_quiz, draw_summary,
+};
 pub use utils::{calculate_wrapped_cursor_position, render_markdown};

@@ -183,6 +183,7 @@ pub struct UiQuizState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
     Menu,
+    MenuDeleteConfirm,
     Quiz,
     QuizQuitConfirm,
     Summary,
