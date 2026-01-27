@@ -25,6 +25,7 @@ use interactive_flashcards::{
         AiRequest, AiResponse, AppState, Flashcard, QuizSession, UiMenuState, UiQuizState, UiState,
         UiStateTypes,
     },
+    ui::layout::{calculate_quiz_chunks, calculate_summary_chunks},
     utils::{apply_scroll_with_bounds, calculate_content_height, calculate_max_scroll},
 };
 
@@ -525,9 +526,13 @@ async fn main() -> io::Result<()> {
                                         // Handle feedback scrolling when in quiz state and showing answer
                                         if let Some(ref mut session) = quiz_session
                                             && session.showing_answer {
-                                                // Calculate content bounds for feedback area
-                                                let visible_height = 20; // Approximate - will be refined in UI
-                                                let text_width = 80;   // Approximate - will be refined in UI
+                                                // Calculate dynamic layout
+                                                let size = terminal.size().unwrap_or_default();
+                                                let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                                                let layout = calculate_quiz_chunks(rect);
+
+                                                let visible_height = (layout.answer_area.height.saturating_sub(2)) as usize;
+                                                let text_width = (layout.answer_area.width.saturating_sub(2)) as usize;
 
                                                 // Build answer content text for height calculation
                                                 let mut answer_text = String::new();
@@ -594,6 +599,15 @@ async fn main() -> io::Result<()> {
                                     AppState::Summary => {
                                         // Handle assessment scrolling with dynamic bounds
                                         if let Some(ref mut session) = quiz_session {
+                                            // Calculate dynamic layout
+                                            let size = terminal.size().unwrap_or_default();
+                                            let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                                            let layout = calculate_summary_chunks(rect);
+
+                                            // Use assessment_content area
+                                            let visible_height = (layout.assessment_content.height.saturating_sub(2)) as usize;
+                                            let text_width = (layout.assessment_content.width.saturating_sub(2)) as usize;
+
                                             // Build assessment content text for height calculation
                                             let mut assessment_text = String::new();
 
@@ -654,8 +668,6 @@ async fn main() -> io::Result<()> {
                                             }
 
                                             // Calculate scroll bounds
-                                            let visible_height = 20; // Approximate - will be refined in UI
-                                            let text_width = 80;   // Approximate - will be refined in UI
                                             let content_height = calculate_content_height(&assessment_text, text_width);
                                             let max_scroll = calculate_max_scroll(content_height, visible_height);
 

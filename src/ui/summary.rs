@@ -1,7 +1,8 @@
 use crate::models::QuizSession;
+use crate::ui::layout::calculate_summary_chunks;
 use crate::utils::render_markdown;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::Alignment,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
@@ -9,15 +10,7 @@ use ratatui::{
 };
 
 pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(10),
-            Constraint::Length(3),
-        ])
-        .split(f.area());
+    let layout = calculate_summary_chunks(f.area());
 
     let title_text = format!("Session Summary - {}", session.deck_name);
     let title = Paragraph::new(title_text)
@@ -28,7 +21,7 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
         )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-    f.render_widget(title, chunks[0]);
+    f.render_widget(title, layout.header_area);
 
     // Assessment takes full width (no more horizontal split)
     let mut assessment_text = Text::default();
@@ -59,15 +52,6 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
     )));
     assessment_text.push_line(Line::from(""));
 
-    let assessment_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
-        .split(chunks[1]);
-
     if session.assessment_loading {
         let loading_text = Paragraph::new("Analyzing session...")
             .style(
@@ -77,7 +61,7 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
             )
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
-        f.render_widget(loading_text, assessment_chunks[1]);
+        f.render_widget(loading_text, layout.assessment_content);
     } else if let Some(ref assessment) = session.session_assessment {
         let grade_color = if assessment.grade_percentage >= 70.0 {
             Color::Green
@@ -149,20 +133,20 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
             .wrap(Wrap { trim: true })
             .scroll((session.assessment_scroll_y, 0))
             .block(Block::default().borders(Borders::ALL));
-        f.render_widget(assessment_widget, assessment_chunks[1]);
+        f.render_widget(assessment_widget, layout.assessment_content);
 
         if session.assessment_error.is_some() {
             let error_text = Paragraph::new("Analysis unavailable - [R]etry")
                 .style(Style::default().fg(Color::Red))
                 .alignment(Alignment::Center)
                 .block(Block::default().borders(Borders::ALL));
-            f.render_widget(error_text, assessment_chunks[2]);
+            f.render_widget(error_text, layout.assessment_help);
         } else {
             let help_text = Paragraph::new("[R]etry Analysis")
                 .style(Style::default().fg(Color::DarkGray))
                 .alignment(Alignment::Center)
                 .block(Block::default().borders(Borders::ALL));
-            f.render_widget(help_text, assessment_chunks[2]);
+            f.render_widget(help_text, layout.assessment_help);
         }
     } else if let Some(ref error) = session.assessment_error {
         let error_text = Paragraph::new(vec![
@@ -175,24 +159,24 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
         .style(Style::default().fg(Color::Red))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-        f.render_widget(error_text, assessment_chunks[1]);
+        f.render_widget(error_text, layout.assessment_content);
 
         let help_text = Paragraph::new("[R]etry")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
-        f.render_widget(help_text, assessment_chunks[2]);
+        f.render_widget(help_text, layout.assessment_help);
     } else {
         let no_assessment = Paragraph::new("No analysis available")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
-        f.render_widget(no_assessment, assessment_chunks[1]);
+        f.render_widget(no_assessment, layout.assessment_content);
 
         let help_text = Paragraph::new("")
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
-        f.render_widget(help_text, assessment_chunks[2]);
+        f.render_widget(help_text, layout.assessment_help);
     }
 
     let help_text = vec![Line::from(vec![
@@ -214,5 +198,5 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
     let help = Paragraph::new(help_text)
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-    f.render_widget(help, chunks[2]);
+    f.render_widget(help, layout.footer_area);
 }

@@ -1,4 +1,5 @@
 use crate::models::QuizSession;
+use crate::ui::layout::calculate_quiz_chunks;
 use crate::utils::{
     calculate_content_height, calculate_max_scroll, render_markdown, render_text_to_string,
 };
@@ -11,16 +12,7 @@ use ratatui::{
 };
 
 pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str>) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(2),
-            Constraint::Percentage(80),
-            Constraint::Length(3),
-        ])
-        .split(f.area());
+    let layout = calculate_quiz_chunks(f.area());
 
     let flashcard = &session.flashcards[session.current_index];
     let progress = format!(
@@ -36,15 +28,15 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )
-        .alignment(Alignment::Center)
+        .alignment(ratatui::layout::Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-    f.render_widget(header, chunks[0]);
+    f.render_widget(header, layout.header_area);
 
     let question_text = Text::from(flashcard.question.as_str());
     let question = Paragraph::new(question_text)
         .wrap(Wrap { trim: true })
         .block(Block::default().borders(Borders::ALL).title("Question"));
-    f.render_widget(question, chunks[1]);
+    f.render_widget(question, layout.question_area);
 
     let answer_title = if session.showing_answer {
         "Answer"
@@ -133,8 +125,8 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
     // or use feedback scroll position when showing answer
     let scroll_y = if !session.showing_answer {
         // Input mode: cursor-follow scrolling
-        let visible_height = (chunks[2].height - 2) as usize; // Account for borders
-        let text_width = (chunks[2].width - 2) as usize;
+        let visible_height = (layout.answer_area.height - 2) as usize; // Account for borders
+        let text_width = (layout.answer_area.width - 2) as usize;
         let (cursor_line, _) = crate::calculate_wrapped_cursor_position(
             &session.input_buffer,
             session.cursor_position,
@@ -152,8 +144,8 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
         new_scroll as u16
     } else {
         // Answer view mode: use feedback scroll with bounds checking
-        let visible_height = (chunks[2].height - 2) as usize;
-        let text_width = (chunks[2].width - 2) as usize;
+        let visible_height = (layout.answer_area.height - 2) as usize;
+        let text_width = (layout.answer_area.width - 2) as usize;
 
         // Convert answer content to string for height calculation
         let answer_text = render_text_to_string(&answer_content).unwrap_or_default();
@@ -171,19 +163,19 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
         .wrap(Wrap { trim: true })
         .scroll((scroll_y, 0))
         .block(Block::default().borders(Borders::ALL).title(answer_title));
-    f.render_widget(answer, chunks[2]);
+    f.render_widget(answer, layout.answer_area);
 
     // Set cursor position when typing an answer
     if !session.showing_answer {
         // Calculate cursor position accounting for text wrapping
-        let text_width = (chunks[2].width - 2) as usize; // Account for borders
+        let text_width = (layout.answer_area.width - 2) as usize; // Account for borders
         let (cursor_line, cursor_col) = crate::calculate_wrapped_cursor_position(
             &session.input_buffer,
             session.cursor_position,
             text_width,
         );
-        let cursor_x = chunks[2].x + 1 + cursor_col as u16;
-        let cursor_y = chunks[2].y + 1 + (cursor_line as u16).saturating_sub(scroll_y);
+        let cursor_x = layout.answer_area.x + 1 + cursor_col as u16;
+        let cursor_y = layout.answer_area.y + 1 + (cursor_line as u16).saturating_sub(scroll_y);
         f.set_cursor_position((cursor_x, cursor_y));
     }
 
@@ -261,9 +253,9 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
     ]));
 
     let help = Paragraph::new(help_text)
-        .alignment(Alignment::Center)
+        .alignment(ratatui::layout::Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-    f.render_widget(help, chunks[3]);
+    f.render_widget(help, layout.help_area);
 }
 
 pub fn draw_quit_confirmation(f: &mut Frame) {
