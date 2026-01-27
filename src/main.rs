@@ -284,9 +284,16 @@ async fn main() -> io::Result<()> {
                                                 .map(|c| (c.question.clone(), c.answer.clone()))
                                                 .collect();
 
-                                            if let Err(e) = flashcard::initialize_flashcards(&conn, session_id, &flashcards_data) {
-                                                eprintln!("Failed to initialize flashcards: {}", e);
-                                                return Ok(());
+                                            match flashcard::initialize_flashcards(&conn, session_id, &flashcards_data) {
+                                                Ok(ids) => {
+                                                    for (card, id) in cards.iter_mut().zip(ids) {
+                                                        card.id = Some(id);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("Failed to initialize flashcards: {}", e);
+                                                    return Ok(());
+                                                }
                                             }
 
                                             // Create async channels for this quiz session (buffered)

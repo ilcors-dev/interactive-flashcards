@@ -349,7 +349,7 @@ mod tests {
             ("Q1".to_string(), "A1".to_string()),
             ("Q2".to_string(), "A2".to_string()),
         ];
-        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         let detail = get_session_detail(&conn, session_id).unwrap().unwrap();
         assert_eq!(detail.0.deck_name, "Test Deck");

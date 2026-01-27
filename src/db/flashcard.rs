@@ -28,9 +28,10 @@ pub fn initialize_flashcards(
     conn: &Connection,
     session_id: u64,
     flashcards: &[(String, String)],
-) -> Result<()> {
+) -> Result<Vec<u64>> {
     let created_at = now();
     let updated_at = created_at;
+    let mut ids = Vec::new();
 
     for (index, (question, answer)) in flashcards.iter().enumerate() {
         conn.execute(
@@ -38,9 +39,10 @@ pub fn initialize_flashcards(
              VALUES (?, ?, ?, ?, ?, ?)",
             rusqlite::params![session_id, created_at, updated_at, question, answer, index],
         )?;
+        ids.push(conn.last_insert_rowid() as u64);
     }
 
-    Ok(())
+    Ok(ids)
 }
 
 pub fn save_answer(
@@ -160,7 +162,8 @@ mod tests {
             ("Q2".to_string(), "A2".to_string()),
             ("Q3".to_string(), "A3".to_string()),
         ];
-        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let ids = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        assert_eq!(ids.len(), 3);
 
         save_answer(&conn, session_id, "Q1", "A1", "My Answer 1", None).unwrap();
 
@@ -181,7 +184,7 @@ mod tests {
         let session_id = create_session(&conn, "Test Deck", 1).unwrap();
 
         let flashcards = vec![("Q1".to_string(), "A1".to_string())];
-        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         let ai_feedback = AIFeedback {
             is_correct: true,
@@ -215,7 +218,7 @@ mod tests {
         let session_id = create_session(&conn, "Test Deck", 1).unwrap();
 
         let flashcards = vec![("Q1".to_string(), "A1".to_string())];
-        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         // Save initial answer without AI feedback
         save_answer(&conn, session_id, "Q1", "A1", "My Answer", None).unwrap();
@@ -283,7 +286,7 @@ mod tests {
             ("Question 1".to_string(), "Answer 1".to_string()),
             ("Question 2".to_string(), "Answer 2".to_string()),
         ];
-        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         // Simulate answering first question without AI feedback initially
         save_answer(
@@ -408,7 +411,7 @@ mod tests {
             ("Q2".to_string(), "A2".to_string()),
             ("Q3".to_string(), "A3".to_string()),
         ];
-        initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         assert_eq!(get_answer_count(&conn, session_id).unwrap(), 0);
 
