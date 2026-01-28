@@ -26,30 +26,31 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
     // Assessment takes full width (no more horizontal split)
     let mut assessment_text = Text::default();
 
-    // Add simplified stats header
-    let ai_feedback_count = session
-        .flashcards
-        .iter()
-        .filter(|c| c.ai_feedback.is_some())
-        .count();
+    // Calculate simplified stats using the new method
+    let (answered_count, avg_score) = session.calculate_stats();
 
-    // Calculate average score from AI feedback
-    let avg_score = if ai_feedback_count > 0 {
-        let total_score: f32 = session
-            .flashcards
-            .iter()
-            .filter_map(|c| c.ai_feedback.as_ref())
-            .map(|feedback| feedback.correctness_score)
-            .sum();
-        total_score / ai_feedback_count as f32
+    let score_color = if avg_score >= 80.0 {
+        Color::Green
+    } else if avg_score >= 50.0 {
+        Color::Yellow
     } else {
-        0.0
+        Color::Red
     };
 
-    assessment_text.push_line(Line::from(format!(
-        "Answered: {}  |  Avg Score: {:.0}%",
-        session.questions_answered, avg_score
-    )));
+    assessment_text.push_line(Line::from(vec![
+        Span::raw("Answered: "),
+        Span::styled(
+            format!("{}/{}", answered_count, session.questions_total),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  |  Average Score: "),
+        Span::styled(
+            format!("{:.0}%", avg_score),
+            Style::default()
+                .fg(score_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
     assessment_text.push_line(Line::from(""));
 
     if session.assessment_loading {

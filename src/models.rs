@@ -39,6 +39,40 @@ pub struct QuizSession {
     pub assessment_scroll_y: u16,
 }
 
+impl QuizSession {
+    /// Calculate the session statistics.
+    /// Returns (answered_count, average_score_percentage).
+    /// Average score treats unanswered questions as 0%.
+    pub fn calculate_stats(&self) -> (usize, f32) {
+        if self.questions_total == 0 {
+            return (0, 0.0);
+        }
+
+        let answered_count = self
+            .flashcards
+            .iter()
+            .filter(|c| c.user_answer.is_some())
+            .count();
+
+        // Calculate sum of scores (unanswered or error = 0.0)
+        let total_score: f32 = self
+            .flashcards
+            .iter()
+            .map(|c| {
+                c.ai_feedback
+                    .as_ref()
+                    .map(|f| f.correctness_score)
+                    .unwrap_or(0.0)
+            })
+            .sum();
+
+        // Average over TOTAL questions (not just answered ones)
+        let average_score = total_score / self.questions_total as f32;
+
+        (answered_count, average_score * 100.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionData {
     pub id: u64,
@@ -204,4 +238,153 @@ pub struct SessionComparison {
     pub previous_sessions: usize,
     pub improvement_from_avg: f32,
     pub trend: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_session(flashcards: Vec<Flashcard>) -> QuizSession {
+        QuizSession {
+            flashcards: flashcards.clone(),
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            session_id: None,
+            questions_total: flashcards.len(),
+            questions_answered: 0, // This is updated during quiz, but calculate_stats relies on user_answer present
+            ai_enabled: true,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
+            input_scroll_y: 0,
+            feedback_scroll_y: 0,
+            session_assessment: None,
+            assessment_loading: false,
+            assessment_error: None,
+            assessment_scroll_y: 0,
+        }
+    }
+
+    #[test]
+    fn test_calculate_stats_perfect() {
+        let flashcards = vec![
+            Flashcard {
+                question: "Q1".to_string(),
+                answer: "A1".to_string(),
+                user_answer: Some("A1".to_string()),
+                ai_feedback: Some(AIFeedback {
+                    is_correct: true,
+                    correctness_score: 1.0,
+                    corrections: vec![],
+                    explanation: "Good".to_string(),
+                    suggestions: vec![],
+                }),
+                written_to_file: false,
+                id: None,
+            },
+            Flashcard {
+                question: "Q2".to_string(),
+                answer: "A2".to_string(),
+                user_answer: Some("A2".to_string()),
+                ai_feedback: Some(AIFeedback {
+                    is_correct: true,
+                    correctness_score: 1.0,
+                    corrections: vec![],
+                    explanation: "Good".to_string(),
+                    suggestions: vec![],
+                }),
+                written_to_file: false,
+                id: None,
+            },
+        ];
+        let session = create_test_session(flashcards);
+        let (answered, score) = session.calculate_stats();
+        assert_eq!(answered, 2);
+        assert_eq!(score, 100.0);
+    }
+
+    #[test]
+    fn test_calculate_stats_partial() {
+        let flashcards = vec![
+            Flashcard {
+                question: "Q1".to_string(),
+                answer: "A1".to_string(),
+                user_answer: Some("A1".to_string()),
+                ai_feedback: Some(AIFeedback {
+                    is_correct: true,
+                    correctness_score: 1.0,
+                    corrections: vec![],
+                    explanation: "Good".to_string(),
+                    suggestions: vec![],
+                }),
+                written_to_file: false,
+                id: None,
+            },
+            Flashcard {
+                question: "Q2".to_string(),
+                answer: "A2".to_string(),
+                user_answer: Some("A2".to_string()),
+                ai_feedback: Some(AIFeedback {
+                    is_correct: false,
+                    correctness_score: 0.5,
+                    corrections: vec![],
+                    explanation: "Partial".to_string(),
+                    suggestions: vec![],
+                }),
+                written_to_file: false,
+                id: None,
+            },
+        ];
+        let session = create_test_session(flashcards);
+        let (answered, score) = session.calculate_stats();
+        assert_eq!(answered, 2);
+        assert_eq!(score, 75.0); // (1.0 + 0.5) / 2 = 0.75 -> 75%
+    }
+
+    #[test]
+    fn test_calculate_stats_unanswered() {
+        let flashcards = vec![
+            Flashcard {
+                question: "Q1".to_string(),
+                answer: "A1".to_string(),
+                user_answer: Some("A1".to_string()),
+                ai_feedback: Some(AIFeedback {
+                    is_correct: true,
+                    correctness_score: 1.0,
+                    corrections: vec![],
+                    explanation: "Good".to_string(),
+                    suggestions: vec![],
+                }),
+                written_to_file: false,
+                id: None,
+            },
+            Flashcard {
+                question: "Q2".to_string(),
+                answer: "A2".to_string(),
+                user_answer: None, // Unanswered
+                ai_feedback: None,
+                written_to_file: false,
+                id: None,
+            },
+        ];
+        let session = create_test_session(flashcards);
+        let (answered, score) = session.calculate_stats();
+        assert_eq!(answered, 1);
+        assert_eq!(score, 50.0); // (1.0 + 0.0) / 2 = 0.50 -> 50%
+    }
+
+    #[test]
+    fn test_calculate_stats_zero_questions() {
+        let flashcards = vec![];
+        let session = create_test_session(flashcards);
+        let (answered, score) = session.calculate_stats();
+        assert_eq!(answered, 0);
+        assert_eq!(score, 0.0);
+    }
 }
