@@ -93,9 +93,13 @@ pub fn handle_quiz_input(
                         }
                         session.flashcards[session.current_index].written_to_file = true;
 
-                        if let Err(e) =
-                            session::update_progress(&conn, session_id, session.questions_answered)
-                        {
+                        let (_, score) = session.calculate_stats();
+                        if let Err(e) = session::update_progress(
+                            &conn,
+                            session_id,
+                            session.questions_answered,
+                            score,
+                        ) {
                             return Err(io::Error::other(format!("DB error: {}", e)));
                         }
                     }
@@ -377,6 +381,11 @@ impl QuizSession {
                         ai_feedback,
                     ).ok();
                     self.flashcards[flashcard_index].written_to_file = true;
+                }
+
+                let (answered, score) = self.calculate_stats();
+                if let Err(e) = session::update_progress(conn, session_id, answered, score) {
+                    crate::logger::log(&format!("Failed to update session progress: {}", e));
                 }
             }
     }

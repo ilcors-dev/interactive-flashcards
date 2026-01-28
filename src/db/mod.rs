@@ -105,7 +105,7 @@ mod tests {
         run_migrations(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
-        update_progress(&conn, session_id, 5).unwrap();
+        update_progress(&conn, session_id, 5, 0.0).unwrap();
 
         let session = session::get_session(&conn, session_id).unwrap().unwrap();
         assert_eq!(session.questions_answered, 5);

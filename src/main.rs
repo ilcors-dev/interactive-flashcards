@@ -49,7 +49,9 @@ async fn main() -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app_state = AppState::Menu;
-    let csv_files = get_csv_files();
+    let raw_csv_files = get_csv_files();
+    let mut csv_files: Vec<(std::path::PathBuf, Option<db::session::DeckStatus>)> =
+        raw_csv_files.into_iter().map(|p| (p, None)).collect();
     let mut selected_file_index: usize = 0;
     let mut quiz_session: Option<QuizSession> = None;
     let ai_enabled = std::env::var("OPENROUTER_API_KEY").is_ok();
@@ -63,6 +65,13 @@ async fn main() -> io::Result<()> {
     // Load sessions at startup
     if let Ok(conn) = db::init_db() {
         sessions = session::list_sessions(&conn).unwrap_or_default();
+        for (path, status) in csv_files.iter_mut() {
+            let deck_name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            *status = session::get_last_session_status(&conn, &deck_name).ok();
+        }
     }
 
     // Create async event stream and timeout timer for event-driven architecture
@@ -257,8 +266,8 @@ async fn main() -> io::Result<()> {
                                     if focused_panel == 0 {
                                         // CSV panel - start new quiz
                                         if !csv_files.is_empty()
-                                            && let Ok(flashcards) = load_csv(&csv_files[selected_file_index]) {
-                                            let deck_name = csv_files[selected_file_index]
+                                            && let Ok(flashcards) = load_csv(&csv_files[selected_file_index].0) {
+                                            let deck_name = csv_files[selected_file_index].0
                                                 .file_stem().map(|s| s.to_string_lossy().to_string())
                                                 .unwrap_or_else(|| "unknown_deck".to_string());
                                             let mut cards = flashcards;
@@ -424,6 +433,10 @@ async fn main() -> io::Result<()> {
                                                 eprintln!("Failed to delete session: {}", e);
                                             }
                                             sessions = session::list_sessions(&conn).unwrap_or_default();
+                                            for (path, status) in csv_files.iter_mut() {
+                                                let deck_name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                                                *status = session::get_last_session_status(&conn, &deck_name).ok();
+                                            }
                                             if selected_session_index >= sessions.len() && !sessions.is_empty() {
                                                 selected_session_index = sessions.len() - 1;
                                             }
@@ -446,9 +459,13 @@ async fn main() -> io::Result<()> {
                                 KeyCode::Char('y') => {
                                     app_state = AppState::Menu;
                                     quiz_session = None;
-                                    // Refresh sessions list
+                                    // Refresh sessions list and deck status
                                     if let Ok(conn) = db::init_db() {
                                         sessions = session::list_sessions(&conn).unwrap_or_default();
+                                        for (path, status) in csv_files.iter_mut() {
+                                            let deck_name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                                            *status = session::get_last_session_status(&conn, &deck_name).ok();
+                                        }
                                     }
                                 }
                                 KeyCode::Char('n') => {
@@ -460,9 +477,13 @@ async fn main() -> io::Result<()> {
                                 KeyCode::Char('m') => {
                                     app_state = AppState::Menu;
                                     quiz_session = None;
-                                    // Refresh sessions list
+                                    // Refresh sessions list and deck status
                                     if let Ok(conn) = db::init_db() {
                                         sessions = session::list_sessions(&conn).unwrap_or_default();
+                                        for (path, status) in csv_files.iter_mut() {
+                                            let deck_name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                                            *status = session::get_last_session_status(&conn, &deck_name).ok();
+                                        }
                                     }
                                 },
                                 KeyCode::Char('r') | KeyCode::Char('R') => {

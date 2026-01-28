@@ -8,7 +8,7 @@ use ratatui::{
 use std::path::PathBuf;
 
 use crate::ai::DEFAULT_MODEL;
-use crate::db::session::SessionSummary;
+use crate::db::session::{DeckStatus, SessionSummary};
 
 fn format_session_date(timestamp: u64) -> String {
     use std::time::{Duration, UNIX_EPOCH};
@@ -33,9 +33,12 @@ fn format_session_date(timestamp: u64) -> String {
 fn format_session_item(session: &SessionSummary) -> String {
     let date = format_session_date(session.started_at);
     let status = if session.completed_at.is_some() {
-        "COMPLETED".to_string()
+        format!("COMPLETED - {:.0}%", session.current_score)
     } else {
-        format!("{}/{}", session.questions_answered, session.questions_total)
+        format!(
+            "{}/{} - {:.0}%",
+            session.questions_answered, session.questions_total, session.current_score
+        )
     };
     format!("{} - {} ({})", date, session.deck_name, status)
 }
@@ -59,7 +62,7 @@ fn draw_panel_header(area: ratatui::layout::Rect, title: &str, focused: bool, f:
 
 pub fn draw_menu(
     f: &mut Frame,
-    csv_files: &[PathBuf],
+    csv_files: &[(PathBuf, Option<DeckStatus>)],
     selected_file_index: usize,
     sessions: &[SessionSummary],
     selected_session_index: usize,
@@ -111,8 +114,20 @@ pub fn draw_menu(
         csv_files
             .iter()
             .enumerate()
-            .map(|(i, path)| {
+            .map(|(i, (path, status))| {
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
+
+                let status_text = if let Some(s) = status {
+                    let ongoing = if s.is_ongoing { " - Ongoing" } else { "" };
+                    if let Some(score) = s.last_completed_score {
+                        format!("{} (Last: {:.0}%{})", name, score, ongoing)
+                    } else {
+                        format!("{}{}", name, ongoing)
+                    }
+                } else {
+                    name
+                };
+
                 let style = if i == selected_file_index && focused_panel == 0 {
                     Style::default()
                         .fg(Color::Yellow)
@@ -120,7 +135,7 @@ pub fn draw_menu(
                 } else {
                     Style::default()
                 };
-                ListItem::new(name).style(style)
+                ListItem::new(status_text).style(style)
             })
             .collect()
     };

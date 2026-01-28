@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, OptionalExtension, Result};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::db::flashcard::{load_flashcards, FlashcardData};
@@ -11,6 +11,7 @@ pub struct SessionSummary {
     pub completed_at: Option<u64>,
     pub questions_total: usize,
     pub questions_answered: usize,
+    pub current_score: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -23,6 +24,7 @@ pub struct SessionData {
     pub completed_at: Option<u64>,
     pub questions_total: usize,
     pub questions_answered: usize,
+    pub current_score: f32,
 }
 
 fn now() -> u64 {
@@ -38,8 +40,8 @@ pub fn create_session(conn: &Connection, deck_name: &str, questions_total: usize
     let started_at = created_at;
 
     conn.execute(
-        "INSERT INTO sessions (created_at, updated_at, deck_name, started_at, questions_total, questions_answered)
-         VALUES (?, ?, ?, ?, ?, 0)",
+        "INSERT INTO sessions (created_at, updated_at, deck_name, started_at, questions_total, questions_answered, current_score)
+         VALUES (?, ?, ?, ?, ?, 0, 0.0)",
         rusqlite::params![created_at, updated_at, deck_name, started_at, questions_total],
     )?;
 
@@ -48,7 +50,7 @@ pub fn create_session(conn: &Connection, deck_name: &str, questions_total: usize
 
 pub fn get_session(conn: &Connection, id: u64) -> Result<Option<SessionData>> {
     let mut stmt = conn.prepare(
-        "SELECT id, created_at, updated_at, deck_name, started_at, completed_at, questions_total, questions_answered
+        "SELECT id, created_at, updated_at, deck_name, started_at, completed_at, questions_total, questions_answered, current_score
          FROM sessions WHERE id = ?",
     )?;
 
@@ -62,17 +64,23 @@ pub fn get_session(conn: &Connection, id: u64) -> Result<Option<SessionData>> {
             completed_at: row.get(5)?,
             questions_total: row.get(6)?,
             questions_answered: row.get(7)?,
+            current_score: row.get(8)?,
         })
     })
     .map(Some)
     .or(Ok(None))
 }
 
-pub fn update_progress(conn: &Connection, session_id: u64, answered: usize) -> Result<()> {
+pub fn update_progress(
+    conn: &Connection,
+    session_id: u64,
+    answered: usize,
+    score: f32,
+) -> Result<()> {
     let updated_at = now();
     conn.execute(
-        "UPDATE sessions SET updated_at = ?, questions_answered = ? WHERE id = ?",
-        rusqlite::params![updated_at, answered, session_id],
+        "UPDATE sessions SET updated_at = ?, questions_answered = ?, current_score = ? WHERE id = ?",
+        rusqlite::params![updated_at, answered, score, session_id],
     )?;
     Ok(())
 }
@@ -96,7 +104,7 @@ pub fn session_exists(conn: &Connection, session_id: u64) -> bool {
 
 pub fn list_sessions(conn: &Connection) -> Result<Vec<SessionSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, deck_name, started_at, completed_at, questions_total, questions_answered
+        "SELECT id, deck_name, started_at, completed_at, questions_total, questions_answered, current_score
          FROM sessions WHERE deleted_at IS NULL ORDER BY id DESC",
     )?;
 
@@ -109,6 +117,7 @@ pub fn list_sessions(conn: &Connection) -> Result<Vec<SessionSummary>> {
                 completed_at: row.get(3)?,
                 questions_total: row.get(4)?,
                 questions_answered: row.get(5)?,
+                current_score: row.get(6)?,
             })
         })?
         .filter_map(|r| r.ok())
@@ -256,6 +265,40 @@ pub fn get_session_comparison(
     }))
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DeckStatus {
+    pub last_completed_score: Option<f32>,
+    pub is_ongoing: bool,
+}
+
+pub fn get_last_session_status(conn: &Connection, deck_name: &str) -> Result<DeckStatus> {
+    // Check for ongoing session
+    let is_ongoing: bool = conn
+        .query_row(
+            "SELECT 1 FROM sessions WHERE deck_name = ? AND completed_at IS NULL AND deleted_at IS NULL LIMIT 1",
+            [deck_name],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+
+    // Get last completed session score
+    let last_completed_score: Option<f32> = conn
+        .query_row(
+            "SELECT current_score FROM sessions
+             WHERE deck_name = ? AND completed_at IS NOT NULL AND deleted_at IS NULL
+             ORDER BY completed_at DESC LIMIT 1",
+            [deck_name],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    Ok(DeckStatus {
+        last_completed_score,
+        is_ongoing,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +318,7 @@ mod tests {
         assert_eq!(session.deck_name, "Test Deck");
         assert_eq!(session.questions_total, 10);
         assert_eq!(session.questions_answered, 0);
+        assert_eq!(session.current_score, 0.0);
         assert!(session.completed_at.is_none());
     }
 
@@ -286,10 +330,46 @@ mod tests {
         run_migrations_for_test(&mut conn).unwrap();
 
         let session_id = create_session(&conn, "Test Deck", 10).unwrap();
-        update_progress(&conn, session_id, 5).unwrap();
+        update_progress(&conn, session_id, 5, 50.0).unwrap();
 
         let session = get_session(&conn, session_id).unwrap().unwrap();
         assert_eq!(session.questions_answered, 5);
+        assert_eq!(session.current_score, 50.0);
+    }
+
+    #[test]
+    fn test_get_last_session_status() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        // No session initially
+        let status = get_last_session_status(&conn, "Deck1").unwrap();
+        assert!(status.last_completed_score.is_none());
+        assert!(!status.is_ongoing);
+
+        // Create ongoing session
+        let session_id1 = create_session(&conn, "Deck1", 10).unwrap();
+        update_progress(&conn, session_id1, 5, 50.0).unwrap();
+
+        let status = get_last_session_status(&conn, "Deck1").unwrap();
+        assert!(status.last_completed_score.is_none());
+        assert!(status.is_ongoing);
+
+        // Complete session
+        complete_session(&conn, session_id1).unwrap();
+        let status = get_last_session_status(&conn, "Deck1").unwrap();
+        assert_eq!(status.last_completed_score, Some(50.0));
+        assert!(!status.is_ongoing);
+
+        // Create newer ongoing session
+        let session_id2 = create_session(&conn, "Deck1", 10).unwrap();
+        update_progress(&conn, session_id2, 2, 20.0).unwrap();
+
+        let status = get_last_session_status(&conn, "Deck1").unwrap();
+        assert_eq!(status.last_completed_score, Some(50.0)); // Still shows last COMPLETED score
+        assert!(status.is_ongoing);
     }
 
     #[test]
