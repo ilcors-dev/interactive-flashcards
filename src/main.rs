@@ -5,7 +5,7 @@ use crossterm::{
         MouseEventKind,
     },
     execute,
-    terminal::{enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use interactive_flashcards::db::{self, flashcard, session};
 use rand::seq::SliceRandom;
@@ -797,6 +797,7 @@ async fn main() -> io::Result<()> {
         DisableFocusChange
     )?;
     terminal.show_cursor()?;
+    disable_raw_mode()?;
 
     Ok(())
 }
