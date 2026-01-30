@@ -308,8 +308,7 @@ pub fn draw_delete_confirmation(f: &mut Frame) {
     let popup_block = Block::default()
         .title(" Delete Session ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Red))
-        .style(Style::default().bg(Color::Black));
+        .border_style(Style::default().fg(Color::Red));
 
     let vertical_chunks = Layout::default()
         .direction(Direction::Vertical)
