@@ -116,26 +116,68 @@ pub fn draw_menu(
             .enumerate()
             .map(|(i, (path, status))| {
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
-
-                let status_text = if let Some(s) = status {
-                    let ongoing = if s.is_ongoing { " - Ongoing" } else { "" };
-                    if let Some(score) = s.last_completed_score {
-                        format!("{} (Last: {:.0}%{})", name, score, ongoing)
-                    } else {
-                        format!("{}{}", name, ongoing)
-                    }
-                } else {
-                    name
-                };
-
-                let style = if i == selected_file_index && focused_panel == 0 {
+                let selected = i == selected_file_index && focused_panel == 0;
+                let base_style = if selected {
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 };
-                ListItem::new(status_text).style(style)
+
+                let mut lines = vec![Line::from(Span::styled(name, base_style))];
+
+                if let Some(s) = status
+                    && (s.times_studied > 0 || s.is_ongoing)
+                {
+                    let dim = if selected {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    };
+
+                    let mut parts = vec![Span::styled("  ", dim)];
+
+                    if s.is_ongoing {
+                        let ongoing_style = if selected {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD)
+                        };
+                        parts.push(Span::styled("Ongoing", ongoing_style));
+                        if s.times_studied > 0 {
+                            parts.push(Span::styled(" | ", dim));
+                        }
+                    }
+
+                    if s.times_studied > 0 {
+                        parts.push(Span::styled(format!("{}x studied", s.times_studied), dim));
+
+                        if let Some(ts) = s.last_studied_at {
+                            parts.push(Span::styled(" | Last: ", dim));
+                            parts.push(Span::styled(format_session_date(ts), dim));
+                        }
+
+                        if !s.last_scores.is_empty() {
+                            parts.push(Span::styled(" | Scores: ", dim));
+                            let scores_str = s
+                                .last_scores
+                                .iter()
+                                .map(|sc| format!("{:.0}%", sc))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            parts.push(Span::styled(scores_str, dim));
+                        }
+                    }
+
+                    lines.push(Line::from(parts));
+                }
+
+                ListItem::new(lines)
             })
             .collect()
     };

@@ -213,6 +213,10 @@ pub fn handle_quiz_input(
                         session.input_scroll_y = 0; // Reset scroll on question navigation
                     }
                 } else {
+                    if let Some(session_id) = session.session_id
+                        && let Ok(conn) = db::init_db() {
+                            let _ = session::complete_session(&conn, session_id);
+                        }
                     *app_state = AppState::Summary;
                     session.assessment_loading = true;
                     session.assessment_error = None;

@@ -265,14 +265,16 @@ pub fn get_session_comparison(
     }))
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct DeckStatus {
     pub last_completed_score: Option<f32>,
     pub is_ongoing: bool,
+    pub times_studied: usize,
+    pub last_scores: Vec<f32>,
+    pub last_studied_at: Option<u64>,
 }
 
 pub fn get_last_session_status(conn: &Connection, deck_name: &str) -> Result<DeckStatus> {
-    // Check for ongoing session
     let is_ongoing: bool = conn
         .query_row(
             "SELECT 1 FROM sessions WHERE deck_name = ? AND completed_at IS NULL AND deleted_at IS NULL LIMIT 1",
@@ -282,20 +284,33 @@ pub fn get_last_session_status(conn: &Connection, deck_name: &str) -> Result<Dec
         .optional()?
         .unwrap_or(false);
 
-    // Get last completed session score
-    let last_completed_score: Option<f32> = conn
-        .query_row(
-            "SELECT current_score FROM sessions
-             WHERE deck_name = ? AND completed_at IS NOT NULL AND deleted_at IS NULL
-             ORDER BY completed_at DESC LIMIT 1",
-            [deck_name],
-            |row| row.get(0),
-        )
-        .optional()?;
+    let times_studied: usize = conn.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE deck_name = ? AND completed_at IS NOT NULL AND deleted_at IS NULL",
+        [deck_name],
+        |row| row.get(0),
+    )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT current_score, completed_at FROM sessions
+         WHERE deck_name = ? AND completed_at IS NOT NULL AND deleted_at IS NULL
+         ORDER BY completed_at DESC, id DESC LIMIT 5",
+    )?;
+
+    let rows: Vec<(f32, u64)> = stmt
+        .query_map([deck_name], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let last_scores: Vec<f32> = rows.iter().map(|(score, _)| *score).collect();
+    let last_completed_score = last_scores.first().copied();
+    let last_studied_at = rows.first().map(|(_, ts)| *ts);
 
     Ok(DeckStatus {
         last_completed_score,
         is_ongoing,
+        times_studied,
+        last_scores,
+        last_studied_at,
     })
 }
 
@@ -348,6 +363,9 @@ mod tests {
         let status = get_last_session_status(&conn, "Deck1").unwrap();
         assert!(status.last_completed_score.is_none());
         assert!(!status.is_ongoing);
+        assert_eq!(status.times_studied, 0);
+        assert!(status.last_scores.is_empty());
+        assert!(status.last_studied_at.is_none());
 
         // Create ongoing session
         let session_id1 = create_session(&conn, "Deck1", 10).unwrap();
@@ -356,12 +374,16 @@ mod tests {
         let status = get_last_session_status(&conn, "Deck1").unwrap();
         assert!(status.last_completed_score.is_none());
         assert!(status.is_ongoing);
+        assert_eq!(status.times_studied, 0);
 
         // Complete session
         complete_session(&conn, session_id1).unwrap();
         let status = get_last_session_status(&conn, "Deck1").unwrap();
         assert_eq!(status.last_completed_score, Some(50.0));
         assert!(!status.is_ongoing);
+        assert_eq!(status.times_studied, 1);
+        assert_eq!(status.last_scores, vec![50.0]);
+        assert!(status.last_studied_at.is_some());
 
         // Create newer ongoing session
         let session_id2 = create_session(&conn, "Deck1", 10).unwrap();
@@ -370,6 +392,28 @@ mod tests {
         let status = get_last_session_status(&conn, "Deck1").unwrap();
         assert_eq!(status.last_completed_score, Some(50.0)); // Still shows last COMPLETED score
         assert!(status.is_ongoing);
+        assert_eq!(status.times_studied, 1); // Only completed sessions count
+    }
+
+    #[test]
+    fn test_deck_status_last_scores_limit() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        let scores = [60.0, 70.0, 75.0, 80.0, 85.0, 90.0];
+        for score in &scores {
+            let sid = create_session(&conn, "Deck1", 10).unwrap();
+            update_progress(&conn, sid, 10, *score).unwrap();
+            complete_session(&conn, sid).unwrap();
+        }
+
+        let status = get_last_session_status(&conn, "Deck1").unwrap();
+        assert_eq!(status.times_studied, 6);
+        assert_eq!(status.last_scores.len(), 5); // capped at 5
+        assert_eq!(status.last_scores[0], 90.0); // newest first
+        assert_eq!(status.last_completed_score, Some(90.0));
     }
 
     #[test]
