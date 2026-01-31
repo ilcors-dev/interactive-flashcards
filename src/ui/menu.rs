@@ -265,36 +265,32 @@ pub fn draw_menu(
         .block(Block::default().borders(Borders::ALL).title("AI Status"));
     f.render_widget(ai_status, help_chunks[0]);
 
-    let help_text = vec![Line::from(vec![
-        Span::styled(
-            "1/2",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::from(" Focus Panel  "),
-        Span::styled(
-            "↑/↓",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
+    let key_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+
+    let mut spans = vec![
+        Span::styled("1/2", key_style),
+        Span::from(" Panel  "),
+        Span::styled("↑/↓", key_style),
         Span::from(" Navigate  "),
-        Span::styled(
-            "Enter",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::from(" Select  "),
-        Span::styled(
-            "Esc/Ctrl+C",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::from(" Quit"),
-    ])];
+        Span::styled("Enter", key_style),
+        Span::from(if focused_panel == 0 {
+            " Start  "
+        } else {
+            " Resume  "
+        }),
+    ];
+
+    if focused_panel == 1 {
+        spans.push(Span::styled("d", key_style));
+        spans.push(Span::from(" Delete  "));
+    }
+
+    spans.push(Span::styled("Esc", key_style));
+    spans.push(Span::from(" Quit"));
+
+    let help_text = vec![Line::from(spans)];
     let help = Paragraph::new(help_text)
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
