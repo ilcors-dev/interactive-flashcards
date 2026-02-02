@@ -1,9 +1,11 @@
+pub mod chat_popup;
 pub mod layout;
 mod menu;
 mod quiz;
 mod sessions;
 mod summary;
 
+pub use chat_popup::draw_chat_popup;
 pub use layout::{calculate_quiz_chunks, calculate_summary_chunks};
 pub use menu::{draw_delete_confirmation, draw_menu};
 pub use quiz::{draw_quit_confirmation, draw_quiz};

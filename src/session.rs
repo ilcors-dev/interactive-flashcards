@@ -1,6 +1,8 @@
-use crate::db::{self, flashcard, session};
+use crate::db::{self, chat, flashcard, session};
 use crate::logger;
-use crate::models::{AiRequest, AiResponse, AppState, QuizSession};
+use crate::models::{
+    AiRequest, AiResponse, AppState, ChatMessage, ChatRole, ChatState, QuizSession,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io;
 
@@ -240,6 +242,17 @@ pub fn handle_quiz_input(
                 }
                 Ok(())
             }
+            KeyCode::Char('t') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && session.ai_enabled
+                    && session.flashcards[session.current_index]
+                        .ai_feedback
+                        .is_some()
+                {
+                    session.open_chat();
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -290,6 +303,243 @@ impl QuizSession {
         logger::log("Set ai_evaluation_in_progress = true");
     }
 
+    pub fn open_chat(&mut self) {
+        let flashcard = &self.flashcards[self.current_index];
+        let flashcard_id = match flashcard.id {
+            Some(id) => id,
+            None => return,
+        };
+        let session_id = match self.session_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let messages = if let Ok(conn) = db::init_db() {
+            chat::load_chat_messages(&conn, flashcard_id).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        // Check if session is completed (read-only mode)
+        let read_only = if let Ok(conn) = db::init_db() {
+            session::get_session(&conn, session_id)
+                .ok()
+                .flatten()
+                .map(|s| s.completed_at.is_some())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        self.chat_state = Some(ChatState {
+            flashcard_id,
+            session_id,
+            messages,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only,
+        });
+    }
+
+    pub fn close_chat(&mut self) {
+        self.chat_state = None;
+    }
+
+    pub fn send_chat_message(&mut self) {
+        let chat = match &mut self.chat_state {
+            Some(c) if !c.read_only && !c.is_loading => c,
+            _ => return,
+        };
+
+        let user_msg = chat.input_buffer.trim().to_string();
+        if user_msg.is_empty() {
+            return;
+        }
+
+        let order = chat.messages.len() as u32;
+        let flashcard_id = chat.flashcard_id;
+        let session_id = chat.session_id;
+
+        // Save to DB
+        if let Ok(conn) = db::init_db() {
+            let _ = chat::save_chat_message(
+                &conn,
+                flashcard_id,
+                session_id,
+                &ChatRole::User,
+                &user_msg,
+                order,
+            );
+        }
+
+        chat.messages.push(ChatMessage {
+            id: None,
+            role: ChatRole::User,
+            content: user_msg.clone(),
+            message_order: order,
+        });
+
+        chat.input_buffer.clear();
+        chat.cursor_position = 0;
+        chat.is_loading = true;
+        chat.error = None;
+
+        // Build conversation history for the AI
+        let flashcard = &self.flashcards[self.current_index];
+        let question = flashcard.question.clone();
+        let correct_answer = flashcard.answer.clone();
+        let user_answer = flashcard.user_answer.clone().unwrap_or_default();
+        let initial_feedback = flashcard
+            .ai_feedback
+            .as_ref()
+            .map(|f| f.explanation.clone())
+            .unwrap_or_default();
+
+        let conversation_history: Vec<(String, String)> = self
+            .chat_state
+            .as_ref()
+            .unwrap()
+            .messages
+            .iter()
+            .rev()
+            .skip(1) // skip the message we just added
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|m| (m.role.as_str().to_string(), m.content.clone()))
+            .collect();
+
+        if let Some(ai_tx) = self.ai_tx.clone() {
+            let request = AiRequest::Chat {
+                flashcard_id,
+                session_id,
+                question,
+                correct_answer,
+                user_answer,
+                initial_feedback,
+                conversation_history,
+                user_message: user_msg,
+            };
+            tokio::spawn(async move {
+                let _ = ai_tx.send(request).await;
+            });
+        }
+    }
+
+    pub fn process_chat_response(
+        &mut self,
+        flashcard_id: u64,
+        message: Option<String>,
+        error: Option<String>,
+    ) {
+        let chat = match &mut self.chat_state {
+            Some(c) if c.flashcard_id == flashcard_id => c,
+            _ => return,
+        };
+
+        chat.is_loading = false;
+
+        if let Some(reply) = message {
+            let order = chat.messages.len() as u32;
+
+            if let Ok(conn) = db::init_db() {
+                let _ = chat::save_chat_message(
+                    &conn,
+                    flashcard_id,
+                    chat.session_id,
+                    &ChatRole::Assistant,
+                    &reply,
+                    order,
+                );
+            }
+
+            chat.messages.push(ChatMessage {
+                id: None,
+                role: ChatRole::Assistant,
+                content: reply,
+                message_order: order,
+            });
+        }
+
+        if let Some(err) = error {
+            chat.error = Some(err);
+        }
+    }
+
+    pub fn handle_chat_input(&mut self, key: KeyEvent) {
+        let chat = match &mut self.chat_state {
+            Some(c) => c,
+            None => return,
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                self.chat_state = None;
+            }
+            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.chat_state = None;
+            }
+            _ if chat.read_only => {
+                // Read-only: only allow scroll
+                match key.code {
+                    KeyCode::Up => {
+                        chat.scroll_y = chat.scroll_y.saturating_sub(3);
+                    }
+                    KeyCode::Down => {
+                        chat.scroll_y = chat.scroll_y.saturating_add(3);
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Enter => {
+                if !chat.is_loading {
+                    let _ = chat;
+                    self.send_chat_message();
+                }
+            }
+            KeyCode::Up => {
+                if let Some(c) = &mut self.chat_state {
+                    c.scroll_y = c.scroll_y.saturating_sub(3);
+                }
+            }
+            KeyCode::Down => {
+                if let Some(c) = &mut self.chat_state {
+                    c.scroll_y = c.scroll_y.saturating_add(3);
+                }
+            }
+            KeyCode::Left => {
+                if let Some(c) = &mut self.chat_state
+                    && c.cursor_position > 0 {
+                        c.cursor_position -= 1;
+                    }
+            }
+            KeyCode::Right => {
+                if let Some(c) = &mut self.chat_state
+                    && c.cursor_position < c.input_buffer.len() {
+                        c.cursor_position += 1;
+                    }
+            }
+            KeyCode::Backspace => {
+                if let Some(c) = &mut self.chat_state
+                    && c.cursor_position > 0 {
+                        c.input_buffer.remove(c.cursor_position - 1);
+                        c.cursor_position -= 1;
+                    }
+            }
+            KeyCode::Char(ch) => {
+                if let Some(c) = &mut self.chat_state
+                    && !c.is_loading {
+                        c.input_buffer.insert(c.cursor_position, ch);
+                        c.cursor_position += 1;
+                    }
+            }
+            _ => {}
+        }
+    }
+
     pub fn manual_trigger_ai_evaluation(&mut self) {
         self.ai_evaluation_in_progress = false;
         if self.ai_enabled {
@@ -334,6 +584,18 @@ impl QuizSession {
                         suggestions: vec![],
                     }),
                 )
+            }
+            AiResponse::ChatReply {
+                flashcard_id,
+                message,
+                error,
+            } => {
+                logger::log(&format!(
+                    "Received chat reply for flashcard {}",
+                    flashcard_id
+                ));
+                self.process_chat_response(flashcard_id, message, error);
+                return;
             }
             AiResponse::SessionAssessment {
                 session_id: _,
@@ -556,6 +818,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -615,6 +878,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -659,6 +923,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -706,6 +971,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -753,6 +1019,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -796,6 +1063,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -843,6 +1111,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -908,6 +1177,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -963,6 +1233,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1025,6 +1296,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1074,6 +1346,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1122,6 +1395,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1183,6 +1457,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1237,6 +1512,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1334,6 +1610,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
         let app_state = &mut AppState::Quiz;
 
@@ -1366,5 +1643,660 @@ mod tests {
 
         assert_eq!(session.current_index, 0);
         assert!(session.showing_answer); // Should be in answer mode for answered question
+    }
+
+    fn create_session_with_feedback() -> QuizSession {
+        use tokio::sync::mpsc;
+        let (tx, _rx) = mpsc::channel(32);
+        QuizSession {
+            flashcards: vec![Flashcard {
+                question: "What is Rust?".to_string(),
+                answer: "A systems programming language".to_string(),
+                user_answer: Some("A programming language".to_string()),
+                ai_feedback: Some(crate::ai::AIFeedback {
+                    is_correct: true,
+                    correctness_score: 0.8,
+                    corrections: vec![],
+                    explanation: "Good answer, but missing 'systems' qualifier.".to_string(),
+                    suggestions: vec![],
+                }),
+                written_to_file: true,
+                id: Some(1),
+            }],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: true,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            session_id: Some(1),
+            questions_total: 1,
+            questions_answered: 1,
+            ai_enabled: true,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: Some(tx),
+            ai_rx: None,
+            input_scroll_y: 0,
+            feedback_scroll_y: 0,
+            session_assessment: None,
+            assessment_loading: false,
+            assessment_error: None,
+            assessment_scroll_y: 0,
+            chat_state: None,
+        }
+    }
+
+    #[test]
+    fn test_ctrl_t_opens_chat_when_feedback_present() {
+        let mut session = create_session_with_feedback();
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_t, app_state);
+
+        assert!(session.chat_state.is_some());
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.flashcard_id, 1);
+        assert_eq!(chat.session_id, 1);
+        assert!(!chat.is_loading);
+    }
+
+    #[test]
+    fn test_ctrl_t_does_nothing_without_feedback() {
+        let mut session = create_session_with_feedback();
+        session.flashcards[0].ai_feedback = None;
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_t, app_state);
+
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_t_does_nothing_when_ai_disabled() {
+        let mut session = create_session_with_feedback();
+        session.ai_enabled = false;
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_t, app_state);
+
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_t_does_nothing_in_input_mode() {
+        let mut session = create_session_with_feedback();
+        session.showing_answer = false;
+        let app_state = &mut AppState::Quiz;
+
+        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        let _ = handle_quiz_input(&mut session, ctrl_t, app_state);
+
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_chat_close_on_esc() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        session.handle_chat_input(esc);
+
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_chat_close_on_ctrl_t() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        session.handle_chat_input(ctrl_t);
+
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_chat_typing() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
+        let i = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::empty());
+        session.handle_chat_input(h);
+        session.handle_chat_input(i);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.input_buffer, "Hi");
+        assert_eq!(chat.cursor_position, 2);
+    }
+
+    #[test]
+    fn test_chat_typing_blocked_when_loading() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: true,
+            error: None,
+            read_only: false,
+        });
+
+        let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
+        session.handle_chat_input(h);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.input_buffer, "");
+    }
+
+    #[test]
+    fn test_chat_backspace() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Hello".to_string(),
+            cursor_position: 5,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
+        session.handle_chat_input(bs);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.input_buffer, "Hell");
+        assert_eq!(chat.cursor_position, 4);
+    }
+
+    #[test]
+    fn test_chat_cursor_movement() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Hello".to_string(),
+            cursor_position: 5,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let left = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
+        session.handle_chat_input(left);
+        assert_eq!(session.chat_state.as_ref().unwrap().cursor_position, 4);
+
+        let right = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+        session.handle_chat_input(right);
+        assert_eq!(session.chat_state.as_ref().unwrap().cursor_position, 5);
+
+        // Can't go past end
+        session.handle_chat_input(right);
+        assert_eq!(session.chat_state.as_ref().unwrap().cursor_position, 5);
+
+        // Move all the way left
+        for _ in 0..10 {
+            session.handle_chat_input(left);
+        }
+        assert_eq!(session.chat_state.as_ref().unwrap().cursor_position, 0);
+    }
+
+    #[test]
+    fn test_chat_scroll() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 5,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        session.handle_chat_input(up);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 2);
+
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        session.handle_chat_input(down);
+        session.handle_chat_input(down);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 8);
+
+        // Scroll up can't go below 0
+        for _ in 0..10 {
+            session.handle_chat_input(up);
+        }
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 0);
+    }
+
+    #[test]
+    fn test_chat_read_only_blocks_typing() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: true,
+        });
+
+        let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
+        session.handle_chat_input(h);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.input_buffer, "");
+    }
+
+    #[test]
+    fn test_chat_read_only_allows_scroll() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 6,
+            is_loading: false,
+            error: None,
+            read_only: true,
+        });
+
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        session.handle_chat_input(up);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 3);
+
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        session.handle_chat_input(down);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 6);
+    }
+
+    #[test]
+    fn test_chat_read_only_esc_closes() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: true,
+        });
+
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        session.handle_chat_input(esc);
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_process_chat_response_success() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![ChatMessage {
+                id: None,
+                role: ChatRole::User,
+                content: "Tell me more".to_string(),
+                message_order: 0,
+            }],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: true,
+            error: None,
+            read_only: false,
+        });
+
+        session.process_chat_response(1, Some("Here is more info.".to_string()), None);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(!chat.is_loading);
+        assert_eq!(chat.messages.len(), 2);
+        assert_eq!(chat.messages[1].role, ChatRole::Assistant);
+        assert_eq!(chat.messages[1].content, "Here is more info.");
+        assert!(chat.error.is_none());
+    }
+
+    #[test]
+    fn test_process_chat_response_error() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![ChatMessage {
+                id: None,
+                role: ChatRole::User,
+                content: "Tell me more".to_string(),
+                message_order: 0,
+            }],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: true,
+            error: None,
+            read_only: false,
+        });
+
+        session.process_chat_response(1, None, Some("Timeout".to_string()));
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(!chat.is_loading);
+        assert_eq!(chat.messages.len(), 1); // No assistant message added
+        assert_eq!(chat.error, Some("Timeout".to_string()));
+    }
+
+    #[test]
+    fn test_process_chat_response_wrong_flashcard_id_ignored() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: true,
+            error: None,
+            read_only: false,
+        });
+
+        // Response for a different flashcard should be ignored
+        session.process_chat_response(999, Some("Reply".to_string()), None);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(chat.is_loading); // Still loading, wasn't processed
+        assert!(chat.messages.is_empty());
+    }
+
+    #[test]
+    fn test_process_chat_response_no_chat_open() {
+        let mut session = create_session_with_feedback();
+        assert!(session.chat_state.is_none());
+
+        // Should not panic
+        session.process_chat_response(1, Some("Reply".to_string()), None);
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_close_chat() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "partial message".to_string(),
+            cursor_position: 15,
+            scroll_y: 3,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        session.close_chat();
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_send_chat_message_empty_input_does_nothing() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "   ".to_string(), // whitespace only
+            cursor_position: 3,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        session.send_chat_message();
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(chat.messages.is_empty());
+        assert!(!chat.is_loading);
+    }
+
+    #[test]
+    fn test_send_chat_message_read_only_does_nothing() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Hello".to_string(),
+            cursor_position: 5,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: true,
+        });
+
+        session.send_chat_message();
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(chat.messages.is_empty());
+        assert!(!chat.is_loading);
+    }
+
+    #[test]
+    fn test_send_chat_message_while_loading_does_nothing() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Hello".to_string(),
+            cursor_position: 5,
+            scroll_y: 0,
+            is_loading: true,
+            error: None,
+            read_only: false,
+        });
+
+        session.send_chat_message();
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(chat.messages.is_empty()); // Message not sent
+    }
+
+    #[tokio::test]
+    async fn test_chat_enter_sends_message() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Tell me more".to_string(),
+            cursor_position: 12,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        session.handle_chat_input(enter);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.messages.len(), 1);
+        assert_eq!(chat.messages[0].role, ChatRole::User);
+        assert_eq!(chat.messages[0].content, "Tell me more");
+        assert!(chat.input_buffer.is_empty());
+        assert_eq!(chat.cursor_position, 0);
+        assert!(chat.is_loading);
+    }
+
+    #[test]
+    fn test_chat_enter_does_nothing_when_loading() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Hello".to_string(),
+            cursor_position: 5,
+            scroll_y: 0,
+            is_loading: true,
+            error: None,
+            read_only: false,
+        });
+
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        session.handle_chat_input(enter);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(chat.messages.is_empty());
+        assert_eq!(chat.input_buffer, "Hello");
+    }
+
+    #[test]
+    fn test_chat_handle_input_when_no_chat_open() {
+        let mut session = create_session_with_feedback();
+        assert!(session.chat_state.is_none());
+
+        // Should not panic
+        let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
+        session.handle_chat_input(h);
+        assert!(session.chat_state.is_none());
+    }
+
+    #[test]
+    fn test_chat_insert_at_cursor_position() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Hllo".to_string(),
+            cursor_position: 1, // between 'H' and 'l'
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let e = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty());
+        session.handle_chat_input(e);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.input_buffer, "Hello");
+        assert_eq!(chat.cursor_position, 2);
+    }
+
+    #[test]
+    fn test_chat_backspace_at_position_zero() {
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![],
+            input_buffer: "Hello".to_string(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: false,
+            error: None,
+            read_only: false,
+        });
+
+        let bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
+        session.handle_chat_input(bs);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert_eq!(chat.input_buffer, "Hello");
+        assert_eq!(chat.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_process_ai_response_chat_reply() {
+        use crate::models::AiResponse;
+
+        let mut session = create_session_with_feedback();
+        session.chat_state = Some(ChatState {
+            flashcard_id: 1,
+            session_id: 1,
+            messages: vec![ChatMessage {
+                id: None,
+                role: ChatRole::User,
+                content: "Question".to_string(),
+                message_order: 0,
+            }],
+            input_buffer: String::new(),
+            cursor_position: 0,
+            scroll_y: 0,
+            is_loading: true,
+            error: None,
+            read_only: false,
+        });
+
+        let response = AiResponse::ChatReply {
+            flashcard_id: 1,
+            message: Some("AI answer".to_string()),
+            error: None,
+        };
+
+        session.process_ai_responses(response);
+
+        let chat = session.chat_state.as_ref().unwrap();
+        assert!(!chat.is_loading);
+        assert_eq!(chat.messages.len(), 2);
+        assert_eq!(chat.messages[1].content, "AI answer");
     }
 }

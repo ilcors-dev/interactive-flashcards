@@ -3,6 +3,53 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChatRole {
+    User,
+    Assistant,
+    System,
+}
+
+impl ChatRole {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ChatRole::User => "user",
+            ChatRole::Assistant => "assistant",
+            ChatRole::System => "system",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "user" => ChatRole::User,
+            "assistant" => ChatRole::Assistant,
+            "system" => ChatRole::System,
+            _ => ChatRole::User,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub id: Option<u64>,
+    pub role: ChatRole,
+    pub content: String,
+    pub message_order: u32,
+}
+
+#[derive(Debug)]
+pub struct ChatState {
+    pub flashcard_id: u64,
+    pub session_id: u64,
+    pub messages: Vec<ChatMessage>,
+    pub input_buffer: String,
+    pub cursor_position: usize,
+    pub scroll_y: u16,
+    pub is_loading: bool,
+    pub error: Option<String>,
+    pub read_only: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Flashcard {
     pub question: String,
@@ -37,6 +84,7 @@ pub struct QuizSession {
     pub assessment_loading: bool,
     pub assessment_error: Option<String>,
     pub assessment_scroll_y: u16,
+    pub chat_state: Option<ChatState>,
 }
 
 impl QuizSession {
@@ -162,6 +210,16 @@ pub enum AiRequest {
         deck_name: String,
         flashcards: Vec<(String, String, Option<String>, Option<AIFeedback>)>,
     },
+    Chat {
+        flashcard_id: u64,
+        session_id: u64,
+        question: String,
+        correct_answer: String,
+        user_answer: String,
+        initial_feedback: String,
+        conversation_history: Vec<(String, String)>,
+        user_message: String,
+    },
 }
 
 #[derive(Debug)]
@@ -177,6 +235,11 @@ pub enum AiResponse {
     Error {
         flashcard_index: usize,
         error: String,
+    },
+    ChatReply {
+        flashcard_id: u64,
+        message: Option<String>,
+        error: Option<String>,
     },
 }
 
@@ -212,6 +275,11 @@ pub struct UiQuizState {
     pub has_ai_error: bool,
     pub questions_answered: usize,
     pub ai_feedback_count: usize,
+    pub chat_open: bool,
+    pub chat_message_count: usize,
+    pub chat_input_len: usize,
+    pub chat_is_loading: bool,
+    pub chat_scroll_y: u16,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -268,6 +336,7 @@ mod tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         }
     }
 

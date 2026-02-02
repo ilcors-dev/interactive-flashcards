@@ -276,6 +276,7 @@ mod ui_integration_tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         }
     }
 
@@ -351,6 +352,7 @@ mod ui_integration_tests {
             assessment_loading: false,
             assessment_error: None,
             assessment_scroll_y: 0,
+            chat_state: None,
         };
 
         // Send an AI response through the async channel

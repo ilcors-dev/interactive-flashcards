@@ -1,6 +1,6 @@
 use crate::models::QuizSession;
 use crate::ui::layout::calculate_summary_chunks;
-use crate::utils::render_markdown;
+use crate::utils::{calculate_max_scroll, estimate_text_height, render_markdown};
 use ratatui::{
     layout::Alignment,
     style::{Color, Modifier, Style},
@@ -9,7 +9,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
+pub fn draw_summary(f: &mut Frame, session: &mut QuizSession) {
     let layout = calculate_summary_chunks(f.area());
 
     let title_text = format!("Session Summary - {}", session.deck_name);
@@ -129,6 +129,12 @@ pub fn draw_summary(f: &mut Frame, session: &QuizSession) {
                 assessment_text.push_line(Line::from(format!("  {}. {}", i + 1, suggestion)));
             }
         }
+
+        let visible_height = layout.assessment_content.height.saturating_sub(2) as usize;
+        let text_width = layout.assessment_content.width.saturating_sub(2) as usize;
+        let content_height = estimate_text_height(&assessment_text, text_width);
+        let max_scroll = calculate_max_scroll(content_height, visible_height);
+        session.assessment_scroll_y = session.assessment_scroll_y.min(max_scroll);
 
         let assessment_widget = Paragraph::new(assessment_text)
             .wrap(Wrap { trim: true })
