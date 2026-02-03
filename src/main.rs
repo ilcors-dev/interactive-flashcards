@@ -28,7 +28,7 @@ use interactive_flashcards::{
     utils::apply_scroll_with_bounds,
 };
 
-const SCROLL_LINES_PER_EVENT: i16 = 3;
+const SCROLL_LINES_PER_EVENT: i16 = 5;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -582,13 +582,21 @@ async fn main() -> io::Result<()> {
                                         // Handle chat popup scrolling first
                                         if let Some(ref mut session) = quiz_session
                                             && session.chat_state.is_some() {
-                                                let scroll_delta = if mouse_event.kind == MouseEventKind::ScrollUp { -SCROLL_LINES_PER_EVENT } else { SCROLL_LINES_PER_EVENT };
                                                 if let Some(ref mut chat) = session.chat_state {
-                                                    chat.scroll_y = apply_scroll_with_bounds(
-                                                        chat.scroll_y,
-                                                        scroll_delta,
-                                                        u16::MAX, // bounds checked at render time
-                                                    );
+                                                    // Only scroll if not already at bounds
+                                                    let at_top = chat.scroll_y == 0;
+                                                    let at_bottom = chat.scroll_y >= chat.max_scroll;
+                                                    let scrolling_up = mouse_event.kind == MouseEventKind::ScrollUp;
+                                                    let scrolling_down = mouse_event.kind == MouseEventKind::ScrollDown;
+
+                                                    if (scrolling_up && !at_top) || (scrolling_down && !at_bottom) {
+                                                        let scroll_delta = if scrolling_up { -SCROLL_LINES_PER_EVENT } else { SCROLL_LINES_PER_EVENT };
+                                                        chat.scroll_y = apply_scroll_with_bounds(
+                                                            chat.scroll_y,
+                                                            scroll_delta,
+                                                            chat.max_scroll,
+                                                        );
+                                                    }
                                                 }
                                         }
                                         // Handle feedback scrolling when in quiz state and showing answer

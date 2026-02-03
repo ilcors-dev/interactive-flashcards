@@ -48,6 +48,12 @@ pub struct ChatState {
     pub is_loading: bool,
     pub error: Option<String>,
     pub read_only: bool,
+    /// Cached rendered lines for display - rebuilt only when messages change
+    pub rendered_lines_cache: Vec<ratatui::text::Line<'static>>,
+    /// Track message count to know when to invalidate cache
+    pub cached_message_count: usize,
+    /// Cached max scroll value from last render - used for bounds checking in event handlers
+    pub max_scroll: u16,
 }
 
 #[derive(Debug, Clone)]

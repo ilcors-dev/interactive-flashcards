@@ -341,6 +341,9 @@ impl QuizSession {
             is_loading: false,
             error: None,
             read_only,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
     }
 
@@ -483,13 +486,13 @@ impl QuizSession {
                 self.chat_state = None;
             }
             _ if chat.read_only => {
-                // Read-only: only allow scroll
+                // Read-only: only allow scroll (with bounds checking)
                 match key.code {
-                    KeyCode::Up => {
-                        chat.scroll_y = chat.scroll_y.saturating_sub(3);
+                    KeyCode::Up if chat.scroll_y > 0 => {
+                        chat.scroll_y = chat.scroll_y.saturating_sub(5);
                     }
-                    KeyCode::Down => {
-                        chat.scroll_y = chat.scroll_y.saturating_add(3);
+                    KeyCode::Down if chat.scroll_y < chat.max_scroll => {
+                        chat.scroll_y = chat.scroll_y.saturating_add(5).min(chat.max_scroll);
                     }
                     _ => {}
                 }
@@ -501,14 +504,16 @@ impl QuizSession {
                 }
             }
             KeyCode::Up => {
-                if let Some(c) = &mut self.chat_state {
-                    c.scroll_y = c.scroll_y.saturating_sub(3);
-                }
+                if let Some(c) = &mut self.chat_state
+                    && c.scroll_y > 0 {
+                        c.scroll_y = c.scroll_y.saturating_sub(5);
+                    }
             }
             KeyCode::Down => {
-                if let Some(c) = &mut self.chat_state {
-                    c.scroll_y = c.scroll_y.saturating_add(3);
-                }
+                if let Some(c) = &mut self.chat_state
+                    && c.scroll_y < c.max_scroll {
+                        c.scroll_y = c.scroll_y.saturating_add(5).min(c.max_scroll);
+                    }
             }
             KeyCode::Left => {
                 if let Some(c) = &mut self.chat_state
@@ -1752,6 +1757,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
@@ -1773,6 +1781,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
@@ -1794,6 +1805,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
@@ -1819,6 +1833,9 @@ mod tests {
             is_loading: true,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
@@ -1841,6 +1858,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
@@ -1864,6 +1884,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let left = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
@@ -1894,20 +1917,23 @@ mod tests {
             messages: vec![],
             input_buffer: String::new(),
             cursor_position: 0,
-            scroll_y: 5,
+            scroll_y: 10,
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 100, // Allow scrolling for test
         });
 
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
         session.handle_chat_input(up);
-        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 2);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 5);
 
         let down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
         session.handle_chat_input(down);
         session.handle_chat_input(down);
-        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 8);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 15);
 
         // Scroll up can't go below 0
         for _ in 0..10 {
@@ -1929,6 +1955,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: true,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
@@ -1947,19 +1976,22 @@ mod tests {
             messages: vec![],
             input_buffer: String::new(),
             cursor_position: 0,
-            scroll_y: 6,
+            scroll_y: 10,
             is_loading: false,
             error: None,
             read_only: true,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 100, // Allow scrolling for test
         });
 
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
         session.handle_chat_input(up);
-        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 3);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 5);
 
         let down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
         session.handle_chat_input(down);
-        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 6);
+        assert_eq!(session.chat_state.as_ref().unwrap().scroll_y, 10);
     }
 
     #[test]
@@ -1975,6 +2007,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: true,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
@@ -2000,6 +2035,9 @@ mod tests {
             is_loading: true,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         session.process_chat_response(1, Some("Here is more info.".to_string()), None);
@@ -2030,6 +2068,9 @@ mod tests {
             is_loading: true,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         session.process_chat_response(1, None, Some("Timeout".to_string()));
@@ -2053,6 +2094,9 @@ mod tests {
             is_loading: true,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         // Response for a different flashcard should be ignored
@@ -2086,6 +2130,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         session.close_chat();
@@ -2105,6 +2152,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         session.send_chat_message();
@@ -2127,6 +2177,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: true,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         session.send_chat_message();
@@ -2149,6 +2202,9 @@ mod tests {
             is_loading: true,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         session.send_chat_message();
@@ -2170,6 +2226,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
@@ -2197,6 +2256,9 @@ mod tests {
             is_loading: true,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
@@ -2231,6 +2293,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let e = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty());
@@ -2254,6 +2319,9 @@ mod tests {
             is_loading: false,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
@@ -2284,6 +2352,9 @@ mod tests {
             is_loading: true,
             error: None,
             read_only: false,
+            rendered_lines_cache: Vec::new(),
+            cached_message_count: 0,
+            max_scroll: 0,
         });
 
         let response = AiResponse::ChatReply {

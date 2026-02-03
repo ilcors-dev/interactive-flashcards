@@ -28,6 +28,54 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
+/// Rebuild the rendered lines cache from messages.
+/// This is the expensive operation (markdown parsing) that we want to avoid on every frame.
+pub fn rebuild_chat_cache(chat: &mut ChatState) {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    for msg in &chat.messages {
+        match msg.role {
+            ChatRole::User => {
+                lines.push(Line::from(Span::styled(
+                    "You:",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                for line in msg.content.lines() {
+                    lines.push(Line::from(format!("  {}", line)));
+                }
+                lines.push(Line::from(""));
+            }
+            ChatRole::Assistant => {
+                lines.push(Line::from(Span::styled(
+                    "AI:",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                let rendered = render_markdown(&msg.content);
+                for line in rendered {
+                    let mut indented_spans: Vec<Span<'static>> = vec![Span::from("  ")];
+                    indented_spans.extend(line.spans);
+                    lines.push(Line::from(indented_spans));
+                }
+                lines.push(Line::from(""));
+            }
+            ChatRole::System => {
+                lines.push(Line::from(Span::styled(
+                    msg.content.clone(),
+                    Style::default().fg(Color::DarkGray),
+                )));
+                lines.push(Line::from(""));
+            }
+        }
+    }
+
+    chat.rendered_lines_cache = lines;
+    chat.cached_message_count = chat.messages.len();
+}
+
 pub fn draw_chat_popup(f: &mut Frame, chat: &mut ChatState, question_number: usize) {
     let area = centered_rect(80, 85, f.area());
 
@@ -50,48 +98,15 @@ pub fn draw_chat_popup(f: &mut Frame, chat: &mut ChatState, question_number: usi
         ])
         .split(area);
 
-    // Messages area
-    let mut message_lines: Vec<Line> = Vec::new();
-
-    for msg in &chat.messages {
-        match msg.role {
-            ChatRole::User => {
-                message_lines.push(Line::from(Span::styled(
-                    "You:",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )));
-                for line in msg.content.lines() {
-                    message_lines.push(Line::from(format!("  {}", line)));
-                }
-                message_lines.push(Line::from(""));
-            }
-            ChatRole::Assistant => {
-                message_lines.push(Line::from(Span::styled(
-                    "AI:",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                )));
-                let rendered = render_markdown(&msg.content);
-                for line in rendered {
-                    let mut indented_spans = vec![Span::from("  ")];
-                    indented_spans.extend(line.spans);
-                    message_lines.push(Line::from(indented_spans));
-                }
-                message_lines.push(Line::from(""));
-            }
-            ChatRole::System => {
-                message_lines.push(Line::from(Span::styled(
-                    &msg.content,
-                    Style::default().fg(Color::DarkGray),
-                )));
-                message_lines.push(Line::from(""));
-            }
-        }
+    // Rebuild cache only if messages changed
+    if chat.cached_message_count != chat.messages.len() {
+        rebuild_chat_cache(chat);
     }
 
+    // Start with cached lines (clone is cheap - just reference counting for the inner strings)
+    let mut message_lines: Vec<Line<'static>> = chat.rendered_lines_cache.clone();
+
+    // Add dynamic elements (loading indicator, errors) - these are cheap
     if chat.is_loading {
         message_lines.push(Line::from(Span::styled(
             "AI is thinking...",
@@ -124,8 +139,10 @@ pub fn draw_chat_popup(f: &mut Frame, chat: &mut ChatState, question_number: usi
     let buffered_height = content_height + content_height / 2;
     let max_scroll = calculate_max_scroll(buffered_height, visible_height);
 
+    // Store max_scroll for bounds checking in event handlers
+    chat.max_scroll = max_scroll;
+
     // Auto-scroll to bottom when loading, otherwise use user's scroll position
-    // Only clamp if scroll exceeds the generous max to allow seeing all content
     let scroll = if chat.is_loading {
         max_scroll
     } else {
