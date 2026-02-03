@@ -54,6 +54,8 @@ pub struct ChatState {
     pub cached_message_count: usize,
     /// Cached max scroll value from last render - used for bounds checking in event handlers
     pub max_scroll: u16,
+    /// Scroll position for the input box (follows cursor)
+    pub input_scroll_y: u16,
 }
 
 #[derive(Debug, Clone)]

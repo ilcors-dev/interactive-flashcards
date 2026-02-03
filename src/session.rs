@@ -344,6 +344,7 @@ impl QuizSession {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
     }
 
@@ -1760,6 +1761,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
@@ -1784,6 +1786,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
@@ -1808,6 +1811,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
@@ -1836,6 +1840,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
@@ -1861,6 +1866,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
@@ -1887,6 +1893,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let left = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
@@ -1924,6 +1931,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 100, // Allow scrolling for test
+            input_scroll_y: 0,
         });
 
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
@@ -1958,6 +1966,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let h = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::empty());
@@ -1983,6 +1992,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 100, // Allow scrolling for test
+            input_scroll_y: 0,
         });
 
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
@@ -2010,6 +2020,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
@@ -2038,6 +2049,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         session.process_chat_response(1, Some("Here is more info.".to_string()), None);
@@ -2071,6 +2083,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         session.process_chat_response(1, None, Some("Timeout".to_string()));
@@ -2097,6 +2110,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         // Response for a different flashcard should be ignored
@@ -2133,6 +2147,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         session.close_chat();
@@ -2155,6 +2170,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         session.send_chat_message();
@@ -2180,6 +2196,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         session.send_chat_message();
@@ -2205,6 +2222,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         session.send_chat_message();
@@ -2229,6 +2247,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
@@ -2259,6 +2278,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
@@ -2296,6 +2316,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let e = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty());
@@ -2322,6 +2343,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
@@ -2355,6 +2377,7 @@ mod tests {
             rendered_lines_cache: Vec::new(),
             cached_message_count: 0,
             max_scroll: 0,
+            input_scroll_y: 0,
         });
 
         let response = AiResponse::ChatReply {

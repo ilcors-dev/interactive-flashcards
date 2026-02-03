@@ -172,28 +172,44 @@ pub fn draw_chat_popup(f: &mut Frame, chat: &mut ChatState, question_number: usi
             Text::from(chat.input_buffer.as_str())
         };
 
-        let input_widget = Paragraph::new(input_text).wrap(Wrap { trim: false }).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Message ")
-                .border_style(if chat.is_loading {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default().fg(Color::Yellow)
-                }),
+        // Calculate cursor position for scroll adjustment
+        let text_width = (chunks[1].width.saturating_sub(2)) as usize;
+        let visible_height = chunks[1].height.saturating_sub(2) as usize; // Account for borders
+        let (cursor_line, cursor_col) = crate::calculate_wrapped_cursor_position(
+            &chat.input_buffer,
+            chat.cursor_position,
+            text_width,
         );
+
+        // Adjust input scroll to keep cursor visible
+        let mut input_scroll = chat.input_scroll_y as usize;
+        if cursor_line < input_scroll {
+            input_scroll = cursor_line;
+        } else if cursor_line >= input_scroll + visible_height {
+            input_scroll = cursor_line.saturating_sub(visible_height) + 1;
+        }
+        chat.input_scroll_y = input_scroll as u16;
+
+        let input_widget = Paragraph::new(input_text)
+            .wrap(Wrap { trim: false })
+            .scroll((chat.input_scroll_y, 0))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Message ")
+                    .border_style(if chat.is_loading {
+                        Style::default().fg(Color::DarkGray)
+                    } else {
+                        Style::default().fg(Color::Yellow)
+                    }),
+            );
         f.render_widget(input_widget, chunks[1]);
 
-        // Set cursor in input area
+        // Set cursor in input area (adjusted for scroll)
         if !chat.is_loading {
-            let text_width = (chunks[1].width.saturating_sub(2)) as usize;
-            let (cursor_line, cursor_col) = crate::calculate_wrapped_cursor_position(
-                &chat.input_buffer,
-                chat.cursor_position,
-                text_width,
-            );
             let cursor_x = chunks[1].x + 1 + cursor_col as u16;
-            let cursor_y = chunks[1].y + 1 + cursor_line as u16;
+            let cursor_y =
+                chunks[1].y + 1 + (cursor_line as u16).saturating_sub(chat.input_scroll_y);
             f.set_cursor_position((cursor_x, cursor_y));
         }
     }
