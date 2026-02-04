@@ -287,4 +287,96 @@ Guidelines:
             Err("No response choices received".into())
         }
     }
+
+    pub async fn chat(
+        &self,
+        question: &str,
+        correct_answer: &str,
+        user_answer: &str,
+        initial_feedback: &str,
+        conversation_history: &[(String, String)],
+        user_message: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let system_prompt = format!(
+            r#"You are an educational tutor helping a student understand a flashcard topic.
+
+Context:
+- Question: {}
+- Correct Answer: {}
+- Student's Answer: {}
+- Initial AI Feedback: {}
+
+Continue the conversation naturally, helping the student understand the topic better. Be concise but thorough. Use markdown formatting where helpful."#,
+            question, correct_answer, user_answer, initial_feedback
+        );
+
+        let mut messages = vec![Message::text("system", &system_prompt)];
+
+        for (role, content) in conversation_history {
+            messages.push(Message::text(role, content));
+        }
+
+        messages.push(Message::text("user", user_message));
+
+        let provider = ProviderPreferences::new().with_sort(ProviderSort::Throughput);
+
+        let request = ChatCompletionRequest {
+            model: DEFAULT_MODEL.to_string(),
+            messages,
+            provider: Some(provider),
+            stream: None,
+            response_format: None,
+            tools: None,
+            tool_choice: None,
+            models: None,
+            transforms: None,
+            route: None,
+            user: None,
+            max_tokens: Some(DEFAULT_MAX_TOKENS),
+            temperature: Some(DEFAULT_TEMPERATURE),
+            top_p: None,
+            top_k: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            stop: None,
+            logit_bias: None,
+            logprobs: None,
+            top_logprobs: None,
+            prediction: None,
+            parallel_tool_calls: None,
+            verbosity: None,
+        };
+
+        let response = self
+            .client
+            .chat()?
+            .chat_completion(request)
+            .await
+            .map_err(|e| format!("OpenRouter API error: {}", e))?;
+
+        if let Some(choice) = response.choices.first() {
+            match &choice.message.content {
+                openrouter_api::MessageContent::Text(text) => Ok(text.clone()),
+                openrouter_api::MessageContent::Parts(parts) => {
+                    let text_parts: Vec<String> = parts
+                        .iter()
+                        .filter_map(|p| {
+                            if let openrouter_api::ContentPart::Text(tc) = p {
+                                Some(tc.text.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    Ok(text_parts.join("\n"))
+                }
+            }
+        } else {
+            Err("No response choices received".into())
+        }
+    }
 }

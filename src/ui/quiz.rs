@@ -1,8 +1,6 @@
 use crate::models::QuizSession;
 use crate::ui::layout::calculate_quiz_chunks;
-use crate::utils::{
-    calculate_content_height, calculate_max_scroll, render_markdown, render_text_to_string,
-};
+use crate::utils::{calculate_max_scroll, estimate_text_height, render_markdown};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -147,10 +145,7 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
         let visible_height = (layout.answer_area.height - 2) as usize;
         let text_width = (layout.answer_area.width - 2) as usize;
 
-        // Convert answer content to string for height calculation
-        let answer_text = render_text_to_string(&answer_content).unwrap_or_default();
-
-        let content_height = calculate_content_height(&answer_text, text_width);
+        let content_height = estimate_text_height(&answer_content, text_width);
         let max_scroll = calculate_max_scroll(content_height, visible_height);
         let bounded_scroll = session.feedback_scroll_y.min(max_scroll);
 
@@ -180,8 +175,11 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
     }
 
     let mut help_text = Vec::new();
+
+    // Line 1: basic keys
+    let mut basic_spans = Vec::new();
     if !session.showing_answer {
-        help_text.push(Line::from(vec![
+        basic_spans.extend([
             Span::styled(
                 "Enter",
                 Style::default()
@@ -189,17 +187,9 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
                     .add_modifier(Modifier::BOLD),
             ),
             Span::from(" Submit  "),
-            Span::styled(
-                "Esc",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::from(" Quit"),
-        ]));
+        ]);
     }
-
-    help_text.push(Line::from(vec![
+    basic_spans.extend([
         Span::styled(
             "↑/↓",
             Style::default()
@@ -220,29 +210,12 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::from(" Quit to Menu  "),
-    ]));
+        Span::from(" Quit to Menu"),
+    ]);
+    help_text.push(Line::from(basic_spans));
 
-    if session.ai_enabled {
-        help_text.push(Line::from(vec![
-            Span::styled(
-                "Ctrl+E",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::from(" AI Re-evaluate  "),
-            Span::styled(
-                "Ctrl+X",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::from(" AI Cancel  "),
-        ]));
-    }
-
-    help_text.push(Line::from(vec![
+    // Line 2: all Ctrl+ commands
+    let mut ctrl_spans = vec![
         Span::styled(
             "Ctrl+C",
             Style::default()
@@ -250,12 +223,54 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
                 .add_modifier(Modifier::BOLD),
         ),
         Span::from(" Exit App"),
-    ]));
+    ];
+    if session.ai_enabled {
+        ctrl_spans.extend([
+            Span::from("  "),
+            Span::styled(
+                "Ctrl+E",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::from(" Re-evaluate  "),
+            Span::styled(
+                "Ctrl+X",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::from(" Cancel"),
+        ]);
+        if session.showing_answer {
+            let has_feedback = session.flashcards[session.current_index]
+                .ai_feedback
+                .is_some();
+            if has_feedback {
+                ctrl_spans.extend([
+                    Span::from("  "),
+                    Span::styled(
+                        "Ctrl+T",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::from(" Chat with AI"),
+                ]);
+            }
+        }
+    }
+    help_text.push(Line::from(ctrl_spans));
 
     let help = Paragraph::new(help_text)
         .alignment(ratatui::layout::Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, layout.help_area);
+
+    // Render chat popup on top if open
+    if let Some(ref mut chat) = session.chat_state {
+        super::chat_popup::draw_chat_popup(f, chat, session.current_index + 1);
+    }
 }
 
 pub fn draw_quit_confirmation(f: &mut Frame) {

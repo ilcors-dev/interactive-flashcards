@@ -25,7 +25,7 @@ pub fn calculate_quiz_chunks(area: Rect) -> QuizLayout {
             Constraint::Length(3),
             Constraint::Min(2),
             Constraint::Percentage(80),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(area);
 
@@ -90,7 +90,7 @@ mod tests {
         // Layout logic is complex.
 
         assert_eq!(layout.header_area.height, 3);
-        assert_eq!(layout.help_area.height, 3);
+        assert_eq!(layout.help_area.height, 4);
         // We just verify it returns something sane
         assert!(layout.answer_area.height > 0);
         assert!(layout.question_area.height > 0);

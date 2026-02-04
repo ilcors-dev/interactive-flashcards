@@ -1,5 +1,5 @@
 use ratatui::text::Text;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub mod markdown;
 pub use markdown::render_markdown;
@@ -491,6 +491,28 @@ pub fn render_text_to_string(text: &Text) -> Result<String, Box<dyn std::error::
     }
 
     Ok(result)
+}
+
+/// Fast estimate of wrapped line count from a ratatui Text object.
+/// For each Line, sums span display widths (using Unicode width) and divides by available width.
+/// This avoids the expensive full wrapping simulation.
+/// Note: This is an approximation - ratatui's word wrapping may produce different results.
+/// Callers should add appropriate buffers for scroll bounds.
+pub fn estimate_text_height(text: &ratatui::text::Text, width: usize) -> usize {
+    if width == 0 {
+        return text.lines.len();
+    }
+    let mut total = 0usize;
+    for line in &text.lines {
+        // Use unicode display width instead of byte length for accurate measurement
+        let line_width: usize = line.spans.iter().map(|s| s.content.width()).sum();
+        if line_width == 0 {
+            total += 1;
+        } else {
+            total += line_width.div_ceil(width);
+        }
+    }
+    total
 }
 
 #[cfg(test)]

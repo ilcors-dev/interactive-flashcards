@@ -125,18 +125,14 @@ pub fn draw_menu(
                     Style::default()
                 };
 
-                let mut lines = vec![Line::from(Span::styled(name, base_style))];
+                let mut spans = vec![Span::styled(name, base_style)];
 
-                if let Some(s) = status
-                    && (s.times_studied > 0 || s.is_ongoing)
-                {
+                if let Some(s) = status {
                     let dim = if selected {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default().fg(Color::DarkGray)
                     };
-
-                    let mut parts = vec![Span::styled("  ", dim)];
 
                     if s.is_ongoing {
                         let ongoing_style = if selected {
@@ -148,36 +144,19 @@ pub fn draw_menu(
                                 .fg(Color::Green)
                                 .add_modifier(Modifier::BOLD)
                         };
-                        parts.push(Span::styled("Ongoing", ongoing_style));
-                        if s.times_studied > 0 {
-                            parts.push(Span::styled(" | ", dim));
-                        }
+                        spans.push(Span::styled(" [Ongoing]", ongoing_style));
                     }
 
                     if s.times_studied > 0 {
-                        parts.push(Span::styled(format!("{}x studied", s.times_studied), dim));
+                        spans.push(Span::styled(format!(" {}x", s.times_studied), dim));
 
-                        if let Some(ts) = s.last_studied_at {
-                            parts.push(Span::styled(" | Last: ", dim));
-                            parts.push(Span::styled(format_session_date(ts), dim));
-                        }
-
-                        if !s.last_scores.is_empty() {
-                            parts.push(Span::styled(" | Scores: ", dim));
-                            let scores_str = s
-                                .last_scores
-                                .iter()
-                                .map(|sc| format!("{:.0}%", sc))
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            parts.push(Span::styled(scores_str, dim));
+                        if let Some(score) = s.last_scores.first() {
+                            spans.push(Span::styled(format!(" {:.0}%", score), dim));
                         }
                     }
-
-                    lines.push(Line::from(parts));
                 }
 
-                ListItem::new(lines)
+                ListItem::new(Line::from(spans))
             })
             .collect()
     };

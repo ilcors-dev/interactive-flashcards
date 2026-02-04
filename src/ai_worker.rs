@@ -4,6 +4,8 @@ use crate::models::{AiRequest, AiResponse};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{timeout, Duration};
 
+const CHAT_TIMEOUT_SECS: u64 = 30;
+
 pub fn spawn_ai_worker(
     ai_tx: Sender<AiResponse>,
     mut ai_rx: Receiver<AiRequest>,
@@ -128,6 +130,79 @@ pub fn spawn_ai_worker(
                                 .send(AiResponse::SessionAssessment {
                                     session_id,
                                     result: Err(timeout_error),
+                                })
+                                .await;
+                        }
+                    }
+                }
+                AiRequest::Chat {
+                    flashcard_id,
+                    session_id: _,
+                    question,
+                    correct_answer,
+                    user_answer,
+                    initial_feedback,
+                    conversation_history,
+                    user_message,
+                } => {
+                    logger::log(&format!(
+                        "Worker received chat request for flashcard {}",
+                        flashcard_id
+                    ));
+
+                    let client = match OpenRouterClient::new() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            let _ = ai_tx
+                                .send(AiResponse::ChatReply {
+                                    flashcard_id,
+                                    message: None,
+                                    error: Some(format!("Failed to create AI client: {}", e)),
+                                })
+                                .await;
+                            continue;
+                        }
+                    };
+
+                    let chat_future = client.chat(
+                        &question,
+                        &correct_answer,
+                        &user_answer,
+                        &initial_feedback,
+                        &conversation_history,
+                        &user_message,
+                    );
+
+                    match timeout(Duration::from_secs(CHAT_TIMEOUT_SECS), chat_future).await {
+                        Ok(Ok(reply)) => {
+                            logger::log("Worker sending chat reply success");
+                            let _ = ai_tx
+                                .send(AiResponse::ChatReply {
+                                    flashcard_id,
+                                    message: Some(reply),
+                                    error: None,
+                                })
+                                .await;
+                        }
+                        Ok(Err(e)) => {
+                            logger::log(&format!("Worker chat error: {}", e));
+                            let _ = ai_tx
+                                .send(AiResponse::ChatReply {
+                                    flashcard_id,
+                                    message: None,
+                                    error: Some(format!("Chat failed: {}", e)),
+                                })
+                                .await;
+                        }
+                        Err(_) => {
+                            logger::log("Worker chat timeout");
+                            let _ = ai_tx
+                                .send(AiResponse::ChatReply {
+                                    flashcard_id,
+                                    message: None,
+                                    error: Some(
+                                        "Chat response timed out after 30 seconds".to_string(),
+                                    ),
                                 })
                                 .await;
                         }

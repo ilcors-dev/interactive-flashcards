@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 
+pub mod chat;
 pub mod flashcard;
 pub mod session;
 
