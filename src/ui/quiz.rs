@@ -86,7 +86,8 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
                 text.push_line(Line::from(""));
                 text.push_line(Line::from("Corrections:"));
                 for correction in &feedback.corrections {
-                    text.push_line(Line::from(format!("• {}", correction)));
+                    let rendered = render_markdown(&format!("• {}", correction));
+                    text.extend(rendered);
                 }
             }
 
@@ -99,7 +100,8 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
                 text.push_line(Line::from(""));
                 text.push_line(Line::from("Suggestions:"));
                 for suggestion in &feedback.suggestions {
-                    text.push_line(Line::from(format!("• {}", suggestion)));
+                    let rendered = render_markdown(&format!("• {}", suggestion));
+                    text.extend(rendered);
                 }
             }
         } else if let Some(error) = ai_error {
