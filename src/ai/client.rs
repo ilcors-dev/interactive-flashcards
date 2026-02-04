@@ -194,18 +194,24 @@ IMPORTANT:
     "grade_percentage": float (0-100),
     "mastery_level": "Beginner" | "Intermediate" | "Advanced" | "Expert",
     "overall_feedback": "detailed paragraph analysis of performance",
-    "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
     "strengths": ["strength1", "strength2"],
-    "weaknesses": ["weakness1", "weakness2"]
+    "weaknesses": ["weakness1", "weakness2"],
+    "key_concepts_to_review": ["concept1", "concept2"],
+    "misconceptions": ["misconception1", "misconception2"],
+    "priority_questions": ["short topic title 1", "short topic title 2"],
+    "study_focus": "single sentence describing what to focus on next"
 }}
 
 Guidelines:
 - grade_percentage: weighted by answered questions, consider AI scores
 - mastery_level: Beginner (0-40%), Intermediate (41-70%), Advanced (71-90%), Expert (91-100%)
-- overall_feedback: 2-3 sentences analyzing patterns, progress, areas for improvement
-- suggestions: 3-5 actionable, specific study recommendations
+- overall_feedback: 2-3 sentences analyzing patterns and progress
 - strengths: 2-3 specific areas where user performed well
 - weaknesses: 2-3 specific areas needing improvement
+- key_concepts_to_review: specific concepts/topics from the questions that need more study (not generic advice)
+- misconceptions: specific misunderstandings detected in answers (e.g., "confused X with Y")
+- priority_questions: short 3-5 word topic titles for questions to revisit (e.g., "Binary search edge cases", "Recursion base conditions")
+- study_focus: one actionable sentence for what to focus on in the next study session
 "#,
             deck_name,
             flashcards.len(),

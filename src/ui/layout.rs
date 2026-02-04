@@ -9,12 +9,8 @@ pub struct QuizLayout {
 
 pub struct SummaryLayout {
     pub header_area: Rect,
-    pub content_area: Rect, // The main area (chunks[1])
+    pub content_area: Rect,
     pub footer_area: Rect,
-    // Sub-layout for content area
-    pub assessment_spacer_top: Rect,
-    pub assessment_content: Rect,
-    pub assessment_help: Rect,
 }
 
 pub fn calculate_quiz_chunks(area: Rect) -> QuizLayout {
@@ -48,22 +44,10 @@ pub fn calculate_summary_chunks(area: Rect) -> SummaryLayout {
         ])
         .split(area);
 
-    let assessment_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
-        .split(chunks[1]);
-
     SummaryLayout {
         header_area: chunks[0],
         content_area: chunks[1],
         footer_area: chunks[2],
-        assessment_spacer_top: assessment_chunks[0],
-        assessment_content: assessment_chunks[1],
-        assessment_help: assessment_chunks[2],
     }
 }
 
@@ -103,13 +87,6 @@ mod tests {
 
         assert_eq!(layout.header_area.height, 3);
         assert_eq!(layout.footer_area.height, 3);
-
-        // Check sub-layout
-        // content_area height approx 92 (98 - 6)
         assert_eq!(layout.content_area.height, 92);
-
-        assert_eq!(layout.assessment_spacer_top.height, 3);
-        assert_eq!(layout.assessment_help.height, 3);
-        assert_eq!(layout.assessment_content.height, 92 - 6);
     }
 }

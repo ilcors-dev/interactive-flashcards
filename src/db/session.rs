@@ -165,22 +165,29 @@ pub fn save_session_assessment(
     assessment: &crate::models::SessionAssessment,
 ) -> Result<()> {
     let created_at = now();
-    let suggestions = serde_json::to_string(&assessment.suggestions).unwrap_or_default();
     let strengths = serde_json::to_string(&assessment.strengths).unwrap_or_default();
     let weaknesses = serde_json::to_string(&assessment.weaknesses).unwrap_or_default();
+    let key_concepts = serde_json::to_string(&assessment.key_concepts_to_review).unwrap_or_default();
+    let misconceptions = serde_json::to_string(&assessment.misconceptions).unwrap_or_default();
+    let priority_questions = serde_json::to_string(&assessment.priority_questions).unwrap_or_default();
 
     conn.execute(
         "INSERT OR REPLACE INTO session_assessments
-         (session_id, grade_percentage, mastery_level, overall_feedback, suggestions, strengths, weaknesses, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         (session_id, grade_percentage, mastery_level, overall_feedback, suggestions, strengths, weaknesses,
+          key_concepts_to_review, misconceptions, priority_questions, study_focus, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             session_id,
             assessment.grade_percentage,
             assessment.mastery_level,
             assessment.overall_feedback,
-            suggestions,
+            "[]", // Keep suggestions column for backwards compatibility
             strengths,
             weaknesses,
+            key_concepts,
+            misconceptions,
+            priority_questions,
+            assessment.study_focus,
             created_at,
         ],
     )?;
@@ -193,26 +200,35 @@ pub fn get_session_assessment(
     session_id: u64,
 ) -> Result<Option<crate::models::SessionAssessment>> {
     let mut stmt = conn.prepare(
-        "SELECT grade_percentage, mastery_level, overall_feedback, suggestions, strengths, weaknesses
+        "SELECT grade_percentage, mastery_level, overall_feedback, strengths, weaknesses,
+                key_concepts_to_review, misconceptions, priority_questions, study_focus
          FROM session_assessments WHERE session_id = ?",
     )?;
 
     stmt.query_row([session_id], |row| {
-        let suggestions_json: String = row.get(3)?;
-        let strengths_json: String = row.get(4)?;
-        let weaknesses_json: String = row.get(5)?;
+        let strengths_json: String = row.get(3)?;
+        let weaknesses_json: String = row.get(4)?;
+        let key_concepts_json: String = row.get(5)?;
+        let misconceptions_json: String = row.get(6)?;
+        let priority_questions_json: String = row.get(7)?;
+        let study_focus: String = row.get(8)?;
 
-        let suggestions: Vec<String> = serde_json::from_str(&suggestions_json).unwrap_or_default();
         let strengths: Vec<String> = serde_json::from_str(&strengths_json).unwrap_or_default();
         let weaknesses: Vec<String> = serde_json::from_str(&weaknesses_json).unwrap_or_default();
+        let key_concepts: Vec<String> = serde_json::from_str(&key_concepts_json).unwrap_or_default();
+        let misconceptions: Vec<String> = serde_json::from_str(&misconceptions_json).unwrap_or_default();
+        let priority_questions: Vec<String> = serde_json::from_str(&priority_questions_json).unwrap_or_default();
 
         Ok(crate::models::SessionAssessment {
             grade_percentage: row.get(0)?,
             mastery_level: row.get(1)?,
             overall_feedback: row.get(2)?,
-            suggestions,
             strengths,
             weaknesses,
+            key_concepts_to_review: key_concepts,
+            misconceptions,
+            priority_questions,
+            study_focus,
         })
     })
     .map(Some)
@@ -510,9 +526,12 @@ mod tests {
             grade_percentage: 85.0,
             mastery_level: "Intermediate".to_string(),
             overall_feedback: "Great progress!".to_string(),
-            suggestions: vec!["Review chapter 3".to_string(), "Practice more".to_string()],
             strengths: vec!["Core concepts".to_string()],
             weaknesses: vec!["Application questions".to_string()],
+            key_concepts_to_review: vec!["recursion".to_string(), "loops".to_string()],
+            misconceptions: vec!["confused stack with heap".to_string()],
+            priority_questions: vec!["Binary search".to_string(), "Recursion basics".to_string()],
+            study_focus: "Focus on memory management".to_string(),
         };
 
         save_session_assessment(&conn, session_id, &assessment).unwrap();
@@ -520,9 +539,12 @@ mod tests {
         let retrieved = get_session_assessment(&conn, session_id).unwrap().unwrap();
         assert_eq!(retrieved.grade_percentage, 85.0);
         assert_eq!(retrieved.mastery_level, "Intermediate");
-        assert_eq!(retrieved.suggestions.len(), 2);
         assert_eq!(retrieved.strengths.len(), 1);
         assert_eq!(retrieved.weaknesses.len(), 1);
+        assert_eq!(retrieved.key_concepts_to_review.len(), 2);
+        assert_eq!(retrieved.misconceptions.len(), 1);
+        assert_eq!(retrieved.priority_questions.len(), 2);
+        assert!(!retrieved.study_focus.is_empty());
     }
 
     #[test]
@@ -549,9 +571,12 @@ mod tests {
             grade_percentage: 70.0,
             mastery_level: "Intermediate".to_string(),
             overall_feedback: "First session".to_string(),
-            suggestions: vec![],
             strengths: vec![],
             weaknesses: vec![],
+            key_concepts_to_review: vec![],
+            misconceptions: vec![],
+            priority_questions: vec![],
+            study_focus: String::new(),
         };
         save_session_assessment(&conn, session_id1, &assessment1).unwrap();
 
@@ -560,9 +585,12 @@ mod tests {
             grade_percentage: 80.0,
             mastery_level: "Intermediate".to_string(),
             overall_feedback: "Second session".to_string(),
-            suggestions: vec![],
             strengths: vec![],
             weaknesses: vec![],
+            key_concepts_to_review: vec![],
+            misconceptions: vec![],
+            priority_questions: vec![],
+            study_focus: String::new(),
         };
         save_session_assessment(&conn, session_id2, &assessment2).unwrap();
 
@@ -586,9 +614,12 @@ mod tests {
             grade_percentage: 85.0,
             mastery_level: "Intermediate".to_string(),
             overall_feedback: "Test".to_string(),
-            suggestions: vec![],
             strengths: vec![],
             weaknesses: vec![],
+            key_concepts_to_review: vec![],
+            misconceptions: vec![],
+            priority_questions: vec![],
+            study_focus: String::new(),
         };
         save_session_assessment(&conn, session_id, &assessment).unwrap();
 

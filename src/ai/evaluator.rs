@@ -25,9 +25,20 @@ struct SessionAssessmentRaw {
     grade_percentage: f32,
     mastery_level: String,
     overall_feedback: String,
-    suggestions: Vec<String>,
+    #[serde(default)]
     strengths: Vec<String>,
+    #[serde(default)]
     weaknesses: Vec<String>,
+    #[serde(default)]
+    key_concepts_to_review: Vec<String>,
+    #[serde(default)]
+    misconceptions: Vec<String>,
+    #[serde(default)]
+    priority_questions: Vec<String>,
+    #[serde(default)]
+    study_focus: String,
+    #[serde(default)]
+    suggestions: Vec<String>,
 }
 
 pub fn parse_session_assessment(response: &str) -> Result<SessionAssessment, String> {
@@ -43,9 +54,12 @@ pub fn parse_session_assessment(response: &str) -> Result<SessionAssessment, Str
         grade_percentage: raw.grade_percentage,
         mastery_level: raw.mastery_level,
         overall_feedback: raw.overall_feedback,
-        suggestions: raw.suggestions,
         strengths: raw.strengths,
         weaknesses: raw.weaknesses,
+        key_concepts_to_review: raw.key_concepts_to_review,
+        misconceptions: raw.misconceptions,
+        priority_questions: raw.priority_questions,
+        study_focus: raw.study_focus,
     })
 }
 
@@ -248,9 +262,12 @@ mod tests {
             "grade_percentage": 85.0,
             "mastery_level": "Intermediate",
             "overall_feedback": "Great progress on the fundamentals.",
-            "suggestions": ["Review chapter 3", "Practice more examples"],
             "strengths": ["Core concepts", "Terminology"],
-            "weaknesses": ["Application questions"]
+            "weaknesses": ["Application questions"],
+            "key_concepts_to_review": ["recursion", "memory management"],
+            "misconceptions": ["confused stack with heap"],
+            "priority_questions": ["Binary search edge cases", "Recursion base conditions"],
+            "study_focus": "Focus on understanding memory allocation"
         }"#;
 
         let result = parse_session_assessment(json);
@@ -258,9 +275,12 @@ mod tests {
         let assessment = result.unwrap();
         assert_eq!(assessment.grade_percentage, 85.0);
         assert_eq!(assessment.mastery_level, "Intermediate");
-        assert!(assessment.suggestions.len() == 2);
-        assert!(assessment.strengths.len() == 2);
-        assert!(assessment.weaknesses.len() == 1);
+        assert_eq!(assessment.strengths.len(), 2);
+        assert_eq!(assessment.weaknesses.len(), 1);
+        assert_eq!(assessment.key_concepts_to_review.len(), 2);
+        assert_eq!(assessment.misconceptions.len(), 1);
+        assert_eq!(assessment.priority_questions.len(), 2);
+        assert!(!assessment.study_focus.is_empty());
     }
 
     #[test]
@@ -270,9 +290,12 @@ mod tests {
     "grade_percentage": 70.5,
     "mastery_level": "Intermediate",
     "overall_feedback": "Good effort.",
-    "suggestions": ["Keep practicing"],
     "strengths": ["Good start"],
-    "weaknesses": ["Need more review"]
+    "weaknesses": ["Need more review"],
+    "key_concepts_to_review": ["basics"],
+    "misconceptions": [],
+    "priority_questions": ["Basic concepts review"],
+    "study_focus": "Review the basics"
 }
 ```"#;
 

@@ -304,9 +304,18 @@ pub struct SessionAssessment {
     pub grade_percentage: f32,
     pub mastery_level: String,
     pub overall_feedback: String,
-    pub suggestions: Vec<String>,
+    #[serde(default)]
     pub strengths: Vec<String>,
+    #[serde(default)]
     pub weaknesses: Vec<String>,
+    #[serde(default)]
+    pub key_concepts_to_review: Vec<String>,
+    #[serde(default)]
+    pub misconceptions: Vec<String>,
+    #[serde(default)]
+    pub priority_questions: Vec<String>,
+    #[serde(default)]
+    pub study_focus: String,
 }
 
 #[derive(Debug, Clone)]
