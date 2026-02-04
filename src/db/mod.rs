@@ -10,7 +10,7 @@ mod embedded_migrations {
     embed_migrations!("./src/db/migrations");
 }
 
-fn get_data_dir() -> PathBuf {
+pub fn get_data_dir() -> PathBuf {
     if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
         PathBuf::from(home).join(".local/share/interactive-flashcards")
