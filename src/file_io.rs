@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use crate::AIFeedback;
-
     #[test]
     fn test_input_buffer_operations() {
         let mut buffer = String::new();

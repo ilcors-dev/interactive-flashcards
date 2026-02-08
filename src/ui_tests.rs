@@ -2,7 +2,7 @@
 mod ui_integration_tests {
     use crate::ai::AIEvaluationResult;
     use crate::models::{AiRequest, AiResponse};
-    use crate::{AppState, Flashcard, QuizSession};
+    use crate::{Flashcard, QuizSession};
     use tokio::sync::mpsc;
 
     /// Test that UI state calculation captures all relevant changes
@@ -194,7 +194,7 @@ mod ui_integration_tests {
         states.push(calculate_ui_state_tuple(&session));
 
         // Simulate rapid typing
-        for i in 0..5 {
+        for _ in 0..5 {
             session.input_buffer.push('a');
             session.cursor_position += 1;
             states.push(calculate_ui_state_tuple(&session));
@@ -215,6 +215,7 @@ mod ui_integration_tests {
         use crate::AppState;
 
         let mut app_state = AppState::Menu;
+        assert_eq!(app_state, AppState::Menu);
 
         // Simulate 'd' key press
         app_state = AppState::MenuDeleteConfirm;
@@ -227,6 +228,7 @@ mod ui_integration_tests {
         // Simulate 'y' key press (confirm)
         app_state = AppState::MenuDeleteConfirm;
         // Logic for deletion happens in main.rs, here we just check state transition
+        assert_eq!(app_state, AppState::MenuDeleteConfirm);
         app_state = AppState::Menu;
         assert_eq!(app_state, AppState::Menu);
     }
