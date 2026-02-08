@@ -60,14 +60,15 @@
    - Smart date formatting ("Today", "Yesterday", or YYYY-MM-DD)
    - Shows session stats: deck name, questions answered, completion status
    - Session data preserved across app restarts
- - **Session Assessment** - AI-powered post-quiz analysis
+  - **Session Assessment** - AI-powered post-quiz analysis
    - Triggered automatically when quiz ends
    - Displays grade (0-100%), mastery level (Beginner/Intermediate/Advanced/Expert)
    - Shows overall feedback, strengths, weaknesses, and actionable suggestions
    - Runs asynchronously with loading indicator
    - [R]etry option if assessment fails
-   - Historical comparison with previous sessions (trend: improving/stable/declining)
-   - Results persisted in SQLite for future reference
+    - Historical comparison with previous sessions (trend: improving/stable/declining)
+    - Results persisted in SQLite for future reference
+  - **Chat markdown spacing** - Collapsed duplicate blank lines in chat popup markdown rendering
 
 ## Technical Architecture
 
@@ -241,4 +242,3 @@ OPENROUTER_API_KEY="your-key" cargo run
 - Progress visualization and statistics
 - Keyboard shortcut customization
 - Theme/color scheme options
-

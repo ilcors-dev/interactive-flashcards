@@ -15,11 +15,7 @@ pub fn init() {
         if let Some(parent) = log_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        if let Ok(file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-        {
+        if let Ok(file) = OpenOptions::new().create(true).append(true).open(&log_path) {
             *logger = Some(file);
         }
     }

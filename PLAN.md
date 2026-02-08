@@ -24,6 +24,7 @@
 - Session persistence and resume functionality
 - SQLite-based session history with date formatting
 - Post-quiz AI session assessment with historical comparison
+- Chat popup markdown spacing normalization
 
 ## 🚧 Phase 2: Document Support (NEXT)
 
@@ -141,4 +142,3 @@ cargo test
 ```
 
 **Current Status**: Phase 1.8 complete with Session Assessment feature, Phase 2 ready for implementation.
-

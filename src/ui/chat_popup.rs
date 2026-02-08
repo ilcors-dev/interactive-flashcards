@@ -8,6 +8,44 @@ use ratatui::{
     Frame,
 };
 
+fn is_blank_line(line: &Line<'_>) -> bool {
+    if line.spans.is_empty() {
+        return true;
+    }
+
+    line.spans
+        .iter()
+        .all(|span| span.content.chars().all(|ch| ch.is_whitespace()))
+}
+
+fn collapse_blank_lines(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
+    let mut collapsed = Vec::with_capacity(lines.len());
+    let mut prev_blank = false;
+
+    for line in lines {
+        let blank = is_blank_line(&line);
+        if blank {
+            if prev_blank {
+                continue;
+            }
+            prev_blank = true;
+        } else {
+            prev_blank = false;
+        }
+        collapsed.push(line);
+    }
+
+    collapsed
+}
+
+fn push_blank_line_if_needed(lines: &mut Vec<Line<'static>>) {
+    if lines.last().map(is_blank_line).unwrap_or(false) {
+        return;
+    }
+
+    lines.push(Line::from(""));
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -45,7 +83,7 @@ pub fn rebuild_chat_cache(chat: &mut ChatState) {
                 for line in msg.content.lines() {
                     lines.push(Line::from(format!("  {}", line)));
                 }
-                lines.push(Line::from(""));
+                push_blank_line_if_needed(&mut lines);
             }
             ChatRole::Assistant => {
                 lines.push(Line::from(Span::styled(
@@ -55,19 +93,22 @@ pub fn rebuild_chat_cache(chat: &mut ChatState) {
                         .add_modifier(Modifier::BOLD),
                 )));
                 let rendered = render_markdown(&msg.content);
+                let mut indented_lines = Vec::with_capacity(rendered.len());
                 for line in rendered {
                     let mut indented_spans: Vec<Span<'static>> = vec![Span::from("  ")];
                     indented_spans.extend(line.spans);
-                    lines.push(Line::from(indented_spans));
+                    indented_lines.push(Line::from(indented_spans));
                 }
-                lines.push(Line::from(""));
+                let normalized = collapse_blank_lines(indented_lines);
+                lines.extend(normalized);
+                push_blank_line_if_needed(&mut lines);
             }
             ChatRole::System => {
                 lines.push(Line::from(Span::styled(
                     msg.content.clone(),
                     Style::default().fg(Color::DarkGray),
                 )));
-                lines.push(Line::from(""));
+                push_blank_line_if_needed(&mut lines);
             }
         }
     }
@@ -276,4 +317,37 @@ pub fn draw_chat_popup(f: &mut Frame, chat: &mut ChatState, question_number: usi
         .alignment(ratatui::layout::Alignment::Center)
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(help, chunks[2]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_collapse_blank_lines_removes_duplicates() {
+        let input = vec![
+            Line::from("First"),
+            Line::from(""),
+            Line::from("  "),
+            Line::from("Second"),
+            Line::from(""),
+            Line::from("Third"),
+        ];
+
+        let collapsed = collapse_blank_lines(input);
+        let texts: Vec<String> = collapsed.iter().map(|l| l.to_string()).collect();
+
+        assert_eq!(texts, vec!["First", "", "Second", "", "Third"]);
+    }
+
+    #[test]
+    fn test_push_blank_line_if_needed() {
+        let mut lines = vec![Line::from("Hello")];
+
+        push_blank_line_if_needed(&mut lines);
+        assert_eq!(lines.len(), 2);
+
+        push_blank_line_if_needed(&mut lines);
+        assert_eq!(lines.len(), 2);
+    }
 }

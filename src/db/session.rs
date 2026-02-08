@@ -167,9 +167,11 @@ pub fn save_session_assessment(
     let created_at = now();
     let strengths = serde_json::to_string(&assessment.strengths).unwrap_or_default();
     let weaknesses = serde_json::to_string(&assessment.weaknesses).unwrap_or_default();
-    let key_concepts = serde_json::to_string(&assessment.key_concepts_to_review).unwrap_or_default();
+    let key_concepts =
+        serde_json::to_string(&assessment.key_concepts_to_review).unwrap_or_default();
     let misconceptions = serde_json::to_string(&assessment.misconceptions).unwrap_or_default();
-    let priority_questions = serde_json::to_string(&assessment.priority_questions).unwrap_or_default();
+    let priority_questions =
+        serde_json::to_string(&assessment.priority_questions).unwrap_or_default();
 
     conn.execute(
         "INSERT OR REPLACE INTO session_assessments
@@ -215,9 +217,12 @@ pub fn get_session_assessment(
 
         let strengths: Vec<String> = serde_json::from_str(&strengths_json).unwrap_or_default();
         let weaknesses: Vec<String> = serde_json::from_str(&weaknesses_json).unwrap_or_default();
-        let key_concepts: Vec<String> = serde_json::from_str(&key_concepts_json).unwrap_or_default();
-        let misconceptions: Vec<String> = serde_json::from_str(&misconceptions_json).unwrap_or_default();
-        let priority_questions: Vec<String> = serde_json::from_str(&priority_questions_json).unwrap_or_default();
+        let key_concepts: Vec<String> =
+            serde_json::from_str(&key_concepts_json).unwrap_or_default();
+        let misconceptions: Vec<String> =
+            serde_json::from_str(&misconceptions_json).unwrap_or_default();
+        let priority_questions: Vec<String> =
+            serde_json::from_str(&priority_questions_json).unwrap_or_default();
 
         Ok(crate::models::SessionAssessment {
             grade_percentage: row.get(0)?,
