@@ -47,9 +47,7 @@ pub fn initialize_flashcards(
 
 pub fn save_answer(
     conn: &Connection,
-    session_id: u64,
-    question: &str,
-    _answer: &str,
+    flashcard_id: u64,
     user_answer: &str,
     ai_feedback: Option<&AIFeedback>,
 ) -> Result<()> {
@@ -65,19 +63,13 @@ pub fn save_answer(
     conn.execute(
         "UPDATE flashcards
          SET updated_at = ?, user_answer = ?, ai_feedback = ?, answered_at = ?
-         WHERE session_id = ? AND question = ? AND display_order = (
-             SELECT MIN(display_order)
-             FROM flashcards
-             WHERE session_id = ? AND user_answer IS NULL
-         )",
+         WHERE id = ?",
         rusqlite::params![
             updated_at,
             user_answer,
             ai_feedback_json,
             answered_at,
-            session_id,
-            question,
-            session_id
+            flashcard_id
         ],
     )?;
 
@@ -165,13 +157,37 @@ mod tests {
         let ids = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
         assert_eq!(ids.len(), 3);
 
-        save_answer(&conn, session_id, "Q1", "A1", "My Answer 1", None).unwrap();
+        save_answer(&conn, ids[0], "My Answer 1", None).unwrap();
 
         let loaded = load_flashcards(&conn, session_id).unwrap();
         assert_eq!(loaded.len(), 3);
         assert_eq!(loaded[0].user_answer, Some("My Answer 1".to_string()));
         assert!(loaded[0].ai_feedback.is_none());
         assert!(loaded[1].user_answer.is_none());
+    }
+
+    #[test]
+    fn test_save_answer_out_of_order() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations(&mut conn).unwrap();
+
+        let session_id = create_session(&conn, "Test Deck", 3).unwrap();
+
+        let flashcards = vec![
+            ("Q1".to_string(), "A1".to_string()),
+            ("Q2".to_string(), "A2".to_string()),
+            ("Q3".to_string(), "A3".to_string()),
+        ];
+        let ids = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+
+        save_answer(&conn, ids[2], "My Answer 3", None).unwrap();
+
+        let loaded = load_flashcards(&conn, session_id).unwrap();
+        assert!(loaded[0].user_answer.is_none());
+        assert!(loaded[1].user_answer.is_none());
+        assert_eq!(loaded[2].user_answer, Some("My Answer 3".to_string()));
     }
 
     #[test]
@@ -184,7 +200,7 @@ mod tests {
         let session_id = create_session(&conn, "Test Deck", 1).unwrap();
 
         let flashcards = vec![("Q1".to_string(), "A1".to_string())];
-        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let ids = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         let ai_feedback = AIFeedback {
             is_correct: true,
@@ -193,15 +209,7 @@ mod tests {
             explanation: "Correct!".to_string(),
             suggestions: vec![],
         };
-        save_answer(
-            &conn,
-            session_id,
-            "Q1",
-            "A1",
-            "My Answer",
-            Some(&ai_feedback),
-        )
-        .unwrap();
+        save_answer(&conn, ids[0], "My Answer", Some(&ai_feedback)).unwrap();
 
         let loaded = load_flashcards(&conn, session_id).unwrap();
         assert!(loaded[0].ai_feedback.is_some());
@@ -218,10 +226,10 @@ mod tests {
         let session_id = create_session(&conn, "Test Deck", 1).unwrap();
 
         let flashcards = vec![("Q1".to_string(), "A1".to_string())];
-        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let ids = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         // Save initial answer without AI feedback
-        save_answer(&conn, session_id, "Q1", "A1", "My Answer", None).unwrap();
+        save_answer(&conn, ids[0], "My Answer", None).unwrap();
 
         let loaded = load_flashcards(&conn, session_id).unwrap();
         let flashcard_id = loaded[0].id;
@@ -286,18 +294,10 @@ mod tests {
             ("Question 1".to_string(), "Answer 1".to_string()),
             ("Question 2".to_string(), "Answer 2".to_string()),
         ];
-        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let ids = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         // Simulate answering first question without AI feedback initially
-        save_answer(
-            &conn,
-            session_id,
-            "Question 1",
-            "Answer 1",
-            "User Answer 1",
-            None,
-        )
-        .unwrap();
+        save_answer(&conn, ids[0], "User Answer 1", None).unwrap();
 
         let loaded_after_answer = load_flashcards(&conn, session_id).unwrap();
         assert_eq!(
@@ -352,15 +352,7 @@ mod tests {
             suggestions: vec!["Great work".to_string()],
         };
 
-        save_answer(
-            &conn,
-            session_id,
-            "Question 2",
-            "Answer 2",
-            "User Answer 2",
-            Some(&ai_feedback_2),
-        )
-        .unwrap();
+        save_answer(&conn, ids[1], "User Answer 2", Some(&ai_feedback_2)).unwrap();
 
         // Final verification
         let final_loaded = load_flashcards(&conn, session_id).unwrap();
@@ -411,14 +403,14 @@ mod tests {
             ("Q2".to_string(), "A2".to_string()),
             ("Q3".to_string(), "A3".to_string()),
         ];
-        let _ = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
+        let ids = initialize_flashcards(&conn, session_id, &flashcards).unwrap();
 
         assert_eq!(get_answer_count(&conn, session_id).unwrap(), 0);
 
-        save_answer(&conn, session_id, "Q1", "A1", "A1", None).unwrap();
+        save_answer(&conn, ids[0], "A1", None).unwrap();
         assert_eq!(get_answer_count(&conn, session_id).unwrap(), 1);
 
-        save_answer(&conn, session_id, "Q2", "A2", "A2", None).unwrap();
+        save_answer(&conn, ids[1], "A2", None).unwrap();
         assert_eq!(get_answer_count(&conn, session_id).unwrap(), 2);
     }
 }

@@ -33,6 +33,7 @@ CREATE TABLE sessions (
     questions_total INTEGER NOT NULL,
     questions_answered INTEGER NOT NULL DEFAULT 0,
     current_score REAL DEFAULT 0.0,
+    last_viewed_index INTEGER NOT NULL DEFAULT 0,
     deleted_at INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -52,6 +53,7 @@ CREATE INDEX idx_sessions_deleted ON sessions(deleted_at);
 | `questions_total` | INTEGER | Total questions in session |
 | `questions_answered` | INTEGER | Count of answered questions |
 | `current_score` | REAL | Running average score (0-100) |
+| `last_viewed_index` | INTEGER | Last viewed question index for resume |
 | `deleted_at` | UNIX timestamp | NULL unless session is soft-deleted |
 | `created_at` | UNIX timestamp | Row creation time |
 | `updated_at` | UNIX timestamp | Last modification time |

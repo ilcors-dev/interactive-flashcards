@@ -377,24 +377,21 @@ async fn main() -> io::Result<()> {
                                                     })
                                                     .collect();
 
-                                                let mut resume_index = 0;
-                                                let mut showing_answer = false;
-                                                let mut input_buffer = String::new();
-                                                let mut cursor_position = 0;
-                                                for (i, card) in cards.iter().enumerate() {
-                                                    if card.user_answer.is_none() {
-                                                        resume_index = i;
-                                                        break;
-                                                    }
-                                                    resume_index = i;
-                                                }
-                                                if resume_index < cards.len() {
-                                                    showing_answer = cards[resume_index].user_answer.is_some();
-                                                    if showing_answer {
-                                                        input_buffer = cards[resume_index].user_answer.clone().unwrap_or_default();
-                                                        cursor_position = input_buffer.len();
-                                                    }
-                                                }
+                                                let resume_index = if cards.is_empty() {
+                                                    0
+                                                } else {
+                                                    session_data
+                                                        .last_viewed_index
+                                                        .min(cards.len().saturating_sub(1))
+                                                };
+                                                let showing_answer = cards
+                                                    .get(resume_index)
+                                                    .map(|card| card.user_answer.is_some())
+                                                    .unwrap_or(false);
+                                                let input_buffer = String::new();
+                                                let cursor_position = 0;
+                                                let questions_answered =
+                                                    cards.iter().filter(|c| c.user_answer.is_some()).count();
 
                                                 let (request_tx, request_rx) = mpsc::channel::<AiRequest>(32);
                                                 let (response_tx, response_rx) = mpsc::channel::<AiResponse>(32);
@@ -412,7 +409,7 @@ async fn main() -> io::Result<()> {
                                                     cursor_position,
                                                     session_id: Some(session_id),
                                                     questions_total: session_data.questions_total,
-                                                    questions_answered: session_data.questions_answered,
+                                                    questions_answered,
                                                     ai_enabled,
                                                     ai_evaluation_in_progress: false,
                                                     ai_last_evaluated_index: None,

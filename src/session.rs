@@ -6,6 +6,20 @@ use crate::models::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io;
 
+fn update_current_index(session_state: &mut QuizSession, new_index: usize) {
+    session_state.current_index = new_index;
+    session_state.showing_answer = session_state.flashcards[new_index].user_answer.is_some();
+    session_state.last_ai_error = None;
+    session_state.input_buffer.clear();
+    session_state.cursor_position = 0;
+    session_state.input_scroll_y = 0;
+
+    if let Some(session_id) = session_state.session_id
+        && let Ok(conn) = db::init_db() {
+            let _ = session::update_last_viewed_index(&conn, session_id, new_index);
+        }
+}
+
 pub fn handle_quiz_input(
     session: &mut QuizSession,
     key: KeyEvent,
@@ -19,43 +33,15 @@ pub fn handle_quiz_input(
             }
             KeyCode::Down => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
-                    session.current_index += 1;
-                    // Show answer screen if question was already answered, otherwise show input
-                    session.showing_answer = session.flashcards[session.current_index]
-                        .user_answer
-                        .is_some();
-                    session.last_ai_error = None;
-                    if !session.showing_answer {
-                        // Restore input buffer for unanswered questions
-                        session.input_buffer = session.flashcards[session.current_index]
-                            .user_answer
-                            .as_ref()
-                            .unwrap_or(&String::new())
-                            .clone();
-                        session.cursor_position = session.input_buffer.len();
-                        session.input_scroll_y = 0; // Reset scroll on question navigation
-                    }
+                    let new_index = session.current_index + 1;
+                    update_current_index(session, new_index);
                 }
                 Ok(())
             }
             KeyCode::Up => {
                 if session.current_index > 0 {
-                    session.current_index -= 1;
-                    // Show answer screen if question was already answered, otherwise show input
-                    session.showing_answer = session.flashcards[session.current_index]
-                        .user_answer
-                        .is_some();
-                    session.last_ai_error = None;
-                    if !session.showing_answer {
-                        // Restore input buffer for unanswered questions
-                        session.input_buffer = session.flashcards[session.current_index]
-                            .user_answer
-                            .as_ref()
-                            .unwrap_or(&String::new())
-                            .clone();
-                        session.cursor_position = session.input_buffer.len();
-                        session.input_scroll_y = 0; // Reset scroll on question navigation
-                    }
+                    let new_index = session.current_index - 1;
+                    update_current_index(session, new_index);
                 }
                 Ok(())
             }
@@ -80,20 +66,21 @@ pub fn handle_quiz_input(
                         };
 
                         let current_card = &session.flashcards[session.current_index];
+                        let flashcard_id = current_card.id;
                         let user_answer = current_card.user_answer.as_deref().unwrap_or("");
                         let ai_feedback = current_card.ai_feedback.as_ref();
 
-                        if let Err(e) = flashcard::save_answer(
-                            &conn,
-                            session_id,
-                            &current_card.question,
-                            &current_card.answer,
-                            user_answer,
-                            ai_feedback,
-                        ) {
-                            return Err(io::Error::other(format!("DB error: {}", e)));
+                        if let Some(flashcard_id) = flashcard_id {
+                            if let Err(e) = flashcard::save_answer(
+                                &conn,
+                                flashcard_id,
+                                user_answer,
+                                ai_feedback,
+                            ) {
+                                return Err(io::Error::other(format!("DB error: {}", e)));
+                            }
+                            session.flashcards[session.current_index].written_to_file = true;
                         }
-                        session.flashcards[session.current_index].written_to_file = true;
 
                         let (_, score) = session.calculate_stats();
                         if let Err(e) = session::update_progress(
@@ -117,6 +104,23 @@ pub fn handle_quiz_input(
 
                     Ok(())
                 } else {
+                    if session.current_index < session.flashcards.len().saturating_sub(1) {
+                        let new_index = session.current_index + 1;
+                        update_current_index(session, new_index);
+                    } else {
+                        if let Some(session_id) = session.session_id
+                            && let Ok(conn) = db::init_db() {
+                                let _ = session::update_last_viewed_index(
+                                    &conn,
+                                    session_id,
+                                    session.current_index,
+                                );
+                                let _ = session::complete_session(&conn, session_id);
+                            }
+                        *app_state = AppState::Summary;
+                        session.assessment_loading = true;
+                        session.assessment_error = None;
+                    }
                     Ok(())
                 }
             }
@@ -156,67 +160,30 @@ pub fn handle_quiz_input(
             }
             KeyCode::Down => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
-                    session.current_index += 1;
-                    // Show answer screen if question was already answered, otherwise show input
-                    session.showing_answer = session.flashcards[session.current_index]
-                        .user_answer
-                        .is_some();
-                    session.last_ai_error = None;
-                    if !session.showing_answer {
-                        // Restore input buffer for unanswered questions
-                        session.input_buffer = session.flashcards[session.current_index]
-                            .user_answer
-                            .as_ref()
-                            .unwrap_or(&String::new())
-                            .clone();
-                        session.cursor_position = session.input_buffer.len();
-                        session.input_scroll_y = 0; // Reset scroll on question navigation
-                    }
+                    let new_index = session.current_index + 1;
+                    update_current_index(session, new_index);
                 }
                 Ok(())
             }
             KeyCode::Up => {
                 if session.current_index > 0 {
-                    session.current_index -= 1;
-                    // Show answer screen if question was already answered, otherwise show input
-                    session.showing_answer = session.flashcards[session.current_index]
-                        .user_answer
-                        .is_some();
-                    session.last_ai_error = None;
-                    if !session.showing_answer {
-                        // Restore input buffer for unanswered questions
-                        session.input_buffer = session.flashcards[session.current_index]
-                            .user_answer
-                            .as_ref()
-                            .unwrap_or(&String::new())
-                            .clone();
-                        session.cursor_position = session.input_buffer.len();
-                        session.input_scroll_y = 0; // Reset scroll on question navigation
-                    }
+                    let new_index = session.current_index - 1;
+                    update_current_index(session, new_index);
                 }
                 Ok(())
             }
             KeyCode::Enter => {
                 if session.current_index < session.flashcards.len().saturating_sub(1) {
-                    session.current_index += 1;
-                    // Show answer screen if question was already answered, otherwise show input
-                    session.showing_answer = session.flashcards[session.current_index]
-                        .user_answer
-                        .is_some();
-                    session.last_ai_error = None;
-                    if !session.showing_answer {
-                        // Restore input buffer for unanswered questions
-                        session.input_buffer = session.flashcards[session.current_index]
-                            .user_answer
-                            .as_ref()
-                            .unwrap_or(&String::new())
-                            .clone();
-                        session.cursor_position = session.input_buffer.len();
-                        session.input_scroll_y = 0; // Reset scroll on question navigation
-                    }
+                    let new_index = session.current_index + 1;
+                    update_current_index(session, new_index);
                 } else {
                     if let Some(session_id) = session.session_id
                         && let Ok(conn) = db::init_db() {
+                            let _ = session::update_last_viewed_index(
+                                &conn,
+                                session_id,
+                                session.current_index,
+                            );
                             let _ = session::complete_session(&conn, session_id);
                         }
                     *app_state = AppState::Summary;
@@ -629,6 +596,7 @@ impl QuizSession {
         if let Some(session_id) = self.session_id
             && let Ok(ref conn) = db::init_db() {
             if let Some(flashcard_id) = self.flashcards[flashcard_index].id {
+                if self.flashcards[flashcard_index].written_to_file {
                     if let Some(ai_feedback) = &self.flashcards[flashcard_index].ai_feedback {
                         crate::db::flashcard::update_ai_feedback(conn, flashcard_id, ai_feedback)
                             .unwrap_or_else(|e| {
@@ -638,28 +606,21 @@ impl QuizSession {
                                 ));
                             });
                     }
-                } else if !self.flashcards[flashcard_index].written_to_file {
-                    // New flashcard - save answer with AI feedback
+                } else {
                     let current_card = &self.flashcards[flashcard_index];
                     let user_answer = current_card.user_answer.as_deref().unwrap_or("");
                     let ai_feedback = current_card.ai_feedback.as_ref();
 
-                    flashcard::save_answer(
-                        conn,
-                        session_id,
-                        &current_card.question,
-                        &current_card.answer,
-                        user_answer,
-                        ai_feedback,
-                    ).ok();
+                    flashcard::save_answer(conn, flashcard_id, user_answer, ai_feedback).ok();
                     self.flashcards[flashcard_index].written_to_file = true;
                 }
-
-                let (answered, score) = self.calculate_stats();
-                if let Err(e) = session::update_progress(conn, session_id, answered, score) {
-                    crate::logger::log(&format!("Failed to update session progress: {}", e));
-                }
             }
+
+            let (answered, score) = self.calculate_stats();
+            if let Err(e) = session::update_progress(conn, session_id, answered, score) {
+                crate::logger::log(&format!("Failed to update session progress: {}", e));
+            }
+        }
     }
 }
 
@@ -738,6 +699,62 @@ mod tests {
         }
 
         assert!(user_answer.is_none());
+    }
+
+    #[test]
+    fn test_enter_skips_empty_answer() {
+        let mut session = QuizSession {
+            flashcards: vec![
+                Flashcard {
+                    question: "Q1".to_string(),
+                    answer: "A1".to_string(),
+                    user_answer: None,
+                    ai_feedback: None,
+                    written_to_file: false,
+                    id: None,
+                },
+                Flashcard {
+                    question: "Q2".to_string(),
+                    answer: "A2".to_string(),
+                    user_answer: None,
+                    ai_feedback: None,
+                    written_to_file: false,
+                    id: None,
+                },
+            ],
+            current_index: 0,
+            deck_name: "Test".to_string(),
+            showing_answer: false,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            session_id: None,
+            questions_total: 2,
+            questions_answered: 0,
+            ai_enabled: false,
+            ai_evaluation_in_progress: false,
+            ai_last_evaluated_index: None,
+            ai_evaluation_start_time: None,
+            last_ai_error: None,
+            ai_tx: None,
+            ai_rx: None,
+            input_scroll_y: 0,
+            feedback_scroll_y: 0,
+            session_assessment: None,
+            assessment_loading: false,
+            assessment_error: None,
+            assessment_scroll_y: 0,
+            chat_state: None,
+        };
+        let app_state = &mut AppState::Quiz;
+
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        let _ = handle_quiz_input(&mut session, enter, app_state);
+
+        assert_eq!(session.current_index, 1);
+        assert_eq!(session.questions_answered, 0);
+        assert!(session.flashcards[0].user_answer.is_none());
+        assert!(!session.showing_answer);
+        assert!(session.input_buffer.is_empty());
     }
 
     #[test]

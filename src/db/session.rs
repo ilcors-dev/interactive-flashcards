@@ -25,6 +25,7 @@ pub struct SessionData {
     pub questions_total: usize,
     pub questions_answered: usize,
     pub current_score: f32,
+    pub last_viewed_index: usize,
 }
 
 fn now() -> u64 {
@@ -40,8 +41,8 @@ pub fn create_session(conn: &Connection, deck_name: &str, questions_total: usize
     let started_at = created_at;
 
     conn.execute(
-        "INSERT INTO sessions (created_at, updated_at, deck_name, started_at, questions_total, questions_answered, current_score)
-         VALUES (?, ?, ?, ?, ?, 0, 0.0)",
+        "INSERT INTO sessions (created_at, updated_at, deck_name, started_at, questions_total, questions_answered, current_score, last_viewed_index)
+         VALUES (?, ?, ?, ?, ?, 0, 0.0, 0)",
         rusqlite::params![created_at, updated_at, deck_name, started_at, questions_total],
     )?;
 
@@ -50,7 +51,7 @@ pub fn create_session(conn: &Connection, deck_name: &str, questions_total: usize
 
 pub fn get_session(conn: &Connection, id: u64) -> Result<Option<SessionData>> {
     let mut stmt = conn.prepare(
-        "SELECT id, created_at, updated_at, deck_name, started_at, completed_at, questions_total, questions_answered, current_score
+        "SELECT id, created_at, updated_at, deck_name, started_at, completed_at, questions_total, questions_answered, current_score, last_viewed_index
          FROM sessions WHERE id = ?",
     )?;
 
@@ -65,6 +66,7 @@ pub fn get_session(conn: &Connection, id: u64) -> Result<Option<SessionData>> {
             questions_total: row.get(6)?,
             questions_answered: row.get(7)?,
             current_score: row.get(8)?,
+            last_viewed_index: row.get(9)?,
         })
     })
     .map(Some)
@@ -81,6 +83,19 @@ pub fn update_progress(
     conn.execute(
         "UPDATE sessions SET updated_at = ?, questions_answered = ?, current_score = ? WHERE id = ?",
         rusqlite::params![updated_at, answered, score, session_id],
+    )?;
+    Ok(())
+}
+
+pub fn update_last_viewed_index(
+    conn: &Connection,
+    session_id: u64,
+    last_viewed_index: usize,
+) -> Result<()> {
+    let updated_at = now();
+    conn.execute(
+        "UPDATE sessions SET updated_at = ?, last_viewed_index = ? WHERE id = ?",
+        rusqlite::params![updated_at, last_viewed_index, session_id],
     )?;
     Ok(())
 }
@@ -355,6 +370,7 @@ mod tests {
         assert_eq!(session.questions_total, 10);
         assert_eq!(session.questions_answered, 0);
         assert_eq!(session.current_score, 0.0);
+        assert_eq!(session.last_viewed_index, 0);
         assert!(session.completed_at.is_none());
     }
 
@@ -371,6 +387,20 @@ mod tests {
         let session = get_session(&conn, session_id).unwrap().unwrap();
         assert_eq!(session.questions_answered, 5);
         assert_eq!(session.current_score, 50.0);
+    }
+
+    #[test]
+    fn test_update_last_viewed_index() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_db_path = temp_dir.path().join("test.db");
+        let mut conn = Connection::open(&test_db_path).unwrap();
+        run_migrations_for_test(&mut conn).unwrap();
+
+        let session_id = create_session(&conn, "Test Deck", 10).unwrap();
+        update_last_viewed_index(&conn, session_id, 4).unwrap();
+
+        let session = get_session(&conn, session_id).unwrap().unwrap();
+        assert_eq!(session.last_viewed_index, 4);
     }
 
     #[test]

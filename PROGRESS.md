@@ -53,13 +53,14 @@
  - **UI layout resize** - Changed question area to min 3 lines, answer area to 70% for better readability
  - **SQLite migration** - Replaced TXT file output with SQLite database using Refinery migrations
  - **CPU optimization** - Replaced polling event loop with async EventStream, reducing idle CPU usage from ~20% to near-zero
- - **Session History Menu** - New menu accessible via [2] from main menu
-   - Browse all past quiz sessions sorted by newest first
-   - Resume sessions from where you left off (auto-skips answered questions)
-   - Delete unwanted sessions with [D] key
-   - Smart date formatting ("Today", "Yesterday", or YYYY-MM-DD)
-   - Shows session stats: deck name, questions answered, completion status
-   - Session data preserved across app restarts
+  - **Session History Menu** - New menu accessible via [2] from main menu
+    - Browse all past quiz sessions sorted by newest first
+    - Resume sessions from the last viewed question (skipped questions remain unanswered)
+    - Delete unwanted sessions with [D] key
+    - Smart date formatting ("Today", "Yesterday", or YYYY-MM-DD)
+    - Shows session stats: deck name, questions answered, completion status
+    - Session data preserved across app restarts
+  - **Session Resume Fixes** - Restore last viewed question, preserve skipped questions, and persist out-of-order answers
   - **Session Assessment** - AI-powered post-quiz analysis
    - Triggered automatically when quiz ends
    - Displays grade (0-100%), mastery level (Beginner/Intermediate/Advanced/Expert)

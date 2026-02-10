@@ -11,6 +11,7 @@
 - [x] **Integrated AI feedback UI**
 - [x] **Session History Menu** - Browse, resume, and delete past quiz sessions
 - [x] **Session Assessment** - AI-powered post-quiz analysis with grade, mastery level, strengths, weaknesses, and suggestions
+- [x] **Session Resume Fixes** - Restore last viewed question, preserve skipped questions, and persist out-of-order answers
 - [x] Comprehensive test suite (127 tests)
 - [x] Production-ready with robust error handling
 

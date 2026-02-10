@@ -139,6 +139,7 @@ pub struct SessionData {
     pub completed_at: Option<u64>,
     pub questions_total: usize,
     pub questions_answered: usize,
+    pub last_viewed_index: usize,
 }
 
 #[derive(Debug, Clone)]
