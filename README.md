@@ -2,6 +2,10 @@
 
 Terminal flashcard app. Pick a CSV deck, answer questions, and review a summary. Optional AI evaluation is enabled when `OPENROUTER_API_KEY` is set.
 
+### Why?
+
+I started to use NotebookLM to generate flashcards and review them, but it lacks a way of typing and storing the answers which I personally find useful to remember the things I'm studying. So I made while studying for an exam, entirely vibe coding it to save time.
+
 ### CSV format
 
 Each line is a pair: `question,answer`. Quotes are supported for commas and quotes.
