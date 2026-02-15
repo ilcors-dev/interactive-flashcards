@@ -142,4 +142,6 @@ OPENROUTER_API_KEY="your-key" cargo run
 cargo test
 ```
 
+CSV decks live in `~/.local/share/interactive-flashcards/flashcards/` (Windows: `%USERPROFILE%\.local\share\interactive-flashcards\flashcards`).
+
 **Current Status**: Phase 1.8 complete with Session Assessment feature, Phase 2 ready for implementation.

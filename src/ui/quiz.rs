@@ -216,8 +216,15 @@ pub fn draw_quiz(f: &mut Frame, session: &mut QuizSession, ai_error: Option<&str
     ]);
     help_text.push(Line::from(basic_spans));
 
-    // Line 2: all Ctrl+ commands
+    // Line 2: Enter variants + all Ctrl+ commands
     let mut ctrl_spans = vec![
+        Span::styled(
+            "Shift+Enter",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::from(" New line  "),
         Span::styled(
             "Ctrl+C",
             Style::default()

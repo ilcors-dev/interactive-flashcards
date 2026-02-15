@@ -203,6 +203,8 @@ OPENROUTER_API_KEY="your-key" cargo run
 ### SQLite Database
 - **Location**: `~/.local/share/interactive-flashcards/if.db` (macOS/Linux)
 - **Location**: `%USERPROFILE%\.local\share\interactive-flashcards\if.db` (Windows)
+- **Flashcards**: `~/.local/share/interactive-flashcards/flashcards/*.csv` (macOS/Linux)
+- **Flashcards**: `%USERPROFILE%\.local\share\interactive-flashcards\flashcards\*.csv` (Windows)
 - **Framework**: Refinery 0.9 with embedded migrations
 - **Features**: ACID-compliant incremental saves, crash-safe
 - **AI Feedback**: Stored as JSON in flashcards table

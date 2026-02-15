@@ -5,6 +5,7 @@ use crate::models::{
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io;
+use std::sync::OnceLock;
 
 fn update_current_index(session_state: &mut QuizSession, new_index: usize) {
     session_state.current_index = new_index;
@@ -18,6 +19,18 @@ fn update_current_index(session_state: &mut QuizSession, new_index: usize) {
         && let Ok(conn) = db::init_db() {
             let _ = session::update_last_viewed_index(&conn, session_id, new_index);
         }
+}
+
+fn debug_key_event(label: &str, key: &KeyEvent) {
+    static DEBUG_KEYS: OnceLock<bool> = OnceLock::new();
+    let enabled = *DEBUG_KEYS.get_or_init(|| std::env::var_os("IF_DEBUG_KEYS").is_some());
+    if enabled {
+        logger::log(&format!("{} {:?}", label, key));
+    }
+}
+
+fn shift_pressed(key: &KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::SHIFT)
 }
 
 pub fn handle_quiz_input(
@@ -46,7 +59,8 @@ pub fn handle_quiz_input(
                 Ok(())
             }
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                debug_key_event("quiz_input_enter", &key);
+                if shift_pressed(&key) {
                     session.input_buffer.insert(session.cursor_position, '\n');
                     session.cursor_position += 1;
                     Ok(())
@@ -123,6 +137,12 @@ pub fn handle_quiz_input(
                     }
                     Ok(())
                 }
+            }
+            KeyCode::Char('\n') | KeyCode::Char('\r') => {
+                debug_key_event("quiz_input_newline_char", &key);
+                session.input_buffer.insert(session.cursor_position, '\n');
+                session.cursor_position += 1;
+                Ok(())
             }
             KeyCode::Left => {
                 if session.cursor_position > 0 {
@@ -1284,7 +1304,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ctrl_enter_inserts_newline() {
+    fn test_shift_enter_inserts_newline() {
         use tokio::sync::mpsc;
 
         let (tx, _rx) = mpsc::channel(32);
@@ -1323,9 +1343,9 @@ mod tests {
         };
         let app_state = &mut AppState::Quiz;
 
-        // Press Ctrl+Enter
-        let ctrl_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
-        let _ = handle_quiz_input(&mut session, ctrl_enter, app_state);
+        // Press Shift+Enter
+        let shift_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+        let _ = handle_quiz_input(&mut session, shift_enter, app_state);
 
         // Should insert newline at cursor position
         assert_eq!(session.input_buffer, "Hello\n");
@@ -1334,7 +1354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ctrl_enter_in_middle_of_text() {
+    fn test_shift_enter_in_middle_of_text() {
         use tokio::sync::mpsc;
 
         let (tx, _rx) = mpsc::channel(32);
@@ -1373,9 +1393,9 @@ mod tests {
         };
         let app_state = &mut AppState::Quiz;
 
-        // Press Ctrl+Enter
-        let ctrl_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
-        let _ = handle_quiz_input(&mut session, ctrl_enter, app_state);
+        // Press Shift+Enter
+        let shift_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+        let _ = handle_quiz_input(&mut session, shift_enter, app_state);
 
         // Should insert newline in middle of text
         assert_eq!(session.input_buffer, "Hello\n world");
