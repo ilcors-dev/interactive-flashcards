@@ -4,7 +4,7 @@ Terminal flashcard app. Pick a CSV deck, answer questions, and review a summary.
 
 ### Why?
 
-I started to use NotebookLM to generate flashcards and review them, but it lacks a way of typing and storing the answers which I personally find useful to remember the things I'm studying. So I made while studying for an exam, entirely vibe coding it to save time.
+I started to use NotebookLM to generate flashcards and review them, but it lacks a way of typing and storing the answers which I personally find useful to remember the things I'm studying. So I made this (entirely by vibe coding because I was studying for an exam in the meantime).
 
 ### CSV format
 
